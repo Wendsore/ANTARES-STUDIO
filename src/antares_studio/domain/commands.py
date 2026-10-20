@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from antares_studio.domain.model import Keyframe, Node, Project, Scene, Track
+from antares_studio.domain.model import AudioClip, Keyframe, Node, Project, Scene, Subtitle, Track
 from antares_studio.domain.properties import get_property, set_property
 
 
@@ -428,3 +428,163 @@ class UndoStack:
     def _notify(self) -> None:
         for cb in list(self.listeners):
             cb()
+
+
+# --- audio et sous-titres ---------------------------------------------------
+
+
+@dataclass
+class AddAudioClip:
+    scene_id: str
+    clip: AudioClip
+    label: str = "Ajouter une piste audio"
+
+    def do(self, project: Project) -> None:
+        project.scene(self.scene_id).audio.append(self.clip)
+
+    def undo(self, project: Project) -> None:
+        scene = project.scene(self.scene_id)
+        scene.audio = [c for c in scene.audio if c.id != self.clip.id]
+
+
+@dataclass
+class RemoveAudioClip:
+    scene_id: str
+    clip_id: str
+    label: str = "Supprimer la piste audio"
+    _old: tuple[int, AudioClip] | None = field(default=None, repr=False)
+
+    def do(self, project: Project) -> None:
+        scene = project.scene(self.scene_id)
+        for i, c in enumerate(scene.audio):
+            if c.id == self.clip_id:
+                self._old = (i, c)
+                del scene.audio[i]
+                return
+
+    def undo(self, project: Project) -> None:
+        if self._old is not None:
+            i, c = self._old
+            scene = project.scene(self.scene_id)
+            scene.audio.insert(min(i, len(scene.audio)), c)
+
+
+_AUDIO_ATTRS = (
+    "name",
+    "offset_frames",
+    "gain",
+    "in_seconds",
+    "out_seconds",
+    "fade_in_seconds",
+    "fade_out_seconds",
+    "muted",
+)
+
+
+@dataclass
+class SetAudioClipAttr:
+    scene_id: str
+    clip_id: str
+    attr: str
+    value: Any
+    label: str = "Modifier la piste audio"
+    _old: Any = field(default=None, repr=False)
+
+    def do(self, project: Project) -> None:
+        if self.attr not in _AUDIO_ATTRS:
+            raise KeyError(self.attr)
+        clip = project.scene(self.scene_id).audio_clip(self.clip_id)
+        if clip is None:
+            raise KeyError(self.clip_id)
+        self._old = getattr(clip, self.attr)
+        setattr(clip, self.attr, self.value)
+
+    def undo(self, project: Project) -> None:
+        clip = project.scene(self.scene_id).audio_clip(self.clip_id)
+        if clip is not None:
+            setattr(clip, self.attr, self._old)
+
+    def merge_with(self, other: SetAudioClipAttr) -> bool:
+        if (self.scene_id, self.clip_id, self.attr) != (other.scene_id, other.clip_id, other.attr):
+            return False
+        self.value = other.value
+        return True
+
+
+@dataclass
+class AddSubtitle:
+    scene_id: str
+    subtitle: Subtitle
+    label: str = "Ajouter un sous-titre"
+
+    def do(self, project: Project) -> None:
+        scene = project.scene(self.scene_id)
+        scene.subtitles.append(self.subtitle)
+        scene.subtitles.sort(key=lambda s: (s.start_frame, s.id))
+
+    def undo(self, project: Project) -> None:
+        scene = project.scene(self.scene_id)
+        scene.subtitles = [s for s in scene.subtitles if s.id != self.subtitle.id]
+
+
+@dataclass
+class RemoveSubtitle:
+    scene_id: str
+    subtitle_id: str
+    label: str = "Supprimer un sous-titre"
+    _old: Subtitle | None = field(default=None, repr=False)
+
+    def do(self, project: Project) -> None:
+        scene = project.scene(self.scene_id)
+        self._old = next((s for s in scene.subtitles if s.id == self.subtitle_id), None)
+        scene.subtitles = [s for s in scene.subtitles if s.id != self.subtitle_id]
+
+    def undo(self, project: Project) -> None:
+        if self._old is not None:
+            scene = project.scene(self.scene_id)
+            scene.subtitles.append(self._old)
+            scene.subtitles.sort(key=lambda s: (s.start_frame, s.id))
+
+
+@dataclass
+class SetSubtitleAttr:
+    scene_id: str
+    subtitle_id: str
+    attr: str  # start_frame | end_frame | text
+    value: Any
+    label: str = "Modifier un sous-titre"
+    _old: Any = field(default=None, repr=False)
+
+    def do(self, project: Project) -> None:
+        if self.attr not in ("start_frame", "end_frame", "text"):
+            raise KeyError(self.attr)
+        scene = project.scene(self.scene_id)
+        sub = next((s for s in scene.subtitles if s.id == self.subtitle_id), None)
+        if sub is None:
+            raise KeyError(self.subtitle_id)
+        self._old = getattr(sub, self.attr)
+        setattr(sub, self.attr, self.value)
+        scene.subtitles.sort(key=lambda s: (s.start_frame, s.id))
+
+    def undo(self, project: Project) -> None:
+        scene = project.scene(self.scene_id)
+        sub = next((s for s in scene.subtitles if s.id == self.subtitle_id), None)
+        if sub is not None:
+            setattr(sub, self.attr, self._old)
+            scene.subtitles.sort(key=lambda s: (s.start_frame, s.id))
+
+
+@dataclass
+class ReplaceSubtitles:
+    scene_id: str
+    subtitles: list[Subtitle]
+    label: str = "Importer des sous-titres"
+    _old: list[Subtitle] = field(default_factory=list, repr=False)
+
+    def do(self, project: Project) -> None:
+        scene = project.scene(self.scene_id)
+        self._old = list(scene.subtitles)
+        scene.subtitles = sorted(copy.deepcopy(self.subtitles), key=lambda s: (s.start_frame, s.id))
+
+    def undo(self, project: Project) -> None:
+        project.scene(self.scene_id).subtitles = self._old

@@ -10,11 +10,13 @@ from antares_studio.domain.model import (
     SCHEMA_VERSION,
     Asset,
     AssetLicense,
+    AudioClip,
     Canvas,
     Keyframe,
     Node,
     Project,
     Scene,
+    Subtitle,
     Track,
 )
 
@@ -87,6 +89,42 @@ def _scene_from(data: Any, path: str) -> Scene:
             _track_from(t, f"{path}.tracks[{i}]")
             for i, t in enumerate(_expect_list(d.get("tracks", []), f"{path}.tracks"))
         ],
+        audio=[
+            _audio_from(a, f"{path}.audio[{i}]")
+            for i, a in enumerate(_expect_list(d.get("audio", []), f"{path}.audio"))
+        ],
+        subtitles=[
+            _subtitle_from(x, f"{path}.subtitles[{i}]")
+            for i, x in enumerate(_expect_list(d.get("subtitles", []), f"{path}.subtitles"))
+        ],
+    )
+
+
+def _audio_from(data: Any, path: str) -> AudioClip:
+    d = _expect_dict(data, path)
+    out_s = d.get("out_seconds")
+    return AudioClip(
+        id=_expect_str(d.get("id"), f"{path}.id"),
+        asset_id=_expect_str(d.get("asset_id"), f"{path}.asset_id"),
+        name=_expect_str(d.get("name", ""), f"{path}.name"),
+        offset_frames=_expect_int(d.get("offset_frames", 0), f"{path}.offset_frames"),
+        gain=_expect_number(d.get("gain", 1.0), f"{path}.gain"),
+        in_seconds=_expect_number(d.get("in_seconds", 0.0), f"{path}.in_seconds"),
+        out_seconds=None if out_s is None else _expect_number(out_s, f"{path}.out_seconds"),
+        fade_in_seconds=_expect_number(d.get("fade_in_seconds", 0.0), f"{path}.fade_in_seconds"),
+        fade_out_seconds=_expect_number(d.get("fade_out_seconds", 0.0), f"{path}.fade_out_seconds"),
+        muted=_expect_bool(d.get("muted", False), f"{path}.muted"),
+        duration_seconds=_expect_number(d.get("duration_seconds", 0.0), f"{path}.duration_seconds"),
+    )
+
+
+def _subtitle_from(data: Any, path: str) -> Subtitle:
+    d = _expect_dict(data, path)
+    return Subtitle(
+        id=_expect_str(d.get("id"), f"{path}.id"),
+        start_frame=_expect_int(d.get("start_frame"), f"{path}.start_frame"),
+        end_frame=_expect_int(d.get("end_frame"), f"{path}.end_frame"),
+        text=_expect_str(d.get("text", ""), f"{path}.text"),
     )
 
 

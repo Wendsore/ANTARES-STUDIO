@@ -26,6 +26,7 @@ from antares_studio.app.export_dialog import ExportDialog
 from antares_studio.app.inspector_dock import InspectorDock
 from antares_studio.app.layers_dock import LayersDock
 from antares_studio.app.library_dock import LibraryDock
+from antares_studio.app.narration_dock import NarrationDock
 from antares_studio.app.preset_dialog import PresetDialog
 from antares_studio.app.settings import AppSettings
 from antares_studio.app.timeline_dock import TimelineDock
@@ -80,12 +81,31 @@ class MainWindow(QMainWindow):
             "Inspecteur", self.inspector, Qt.DockWidgetArea.RightDockWidgetArea, "dock_inspector"
         )
         self.timeline = TimelineDock(self.document)
+        self.timeline.ffmpeg_path = self.settings.ffmpeg_path()
         self.timeline_dock = self._dock(
             "Timeline", self.timeline, Qt.DockWidgetArea.BottomDockWidgetArea, "dock_timeline"
         )
+        self.narration = NarrationDock(self.document, self.settings)
+        self.narration_dock = self._dock(
+            "Narration (audio et sous-titres)",
+            self.narration,
+            Qt.DockWidgetArea.BottomDockWidgetArea,
+            "dock_narration",
+        )
+        self.tabifyDockWidget(self.timeline_dock, self.narration_dock)
+        self.timeline_dock.raise_()
         self.resizeDocks([self.library_dock, self.layers_dock], [360, 420], Qt.Orientation.Vertical)
         self.resizeDocks([self.inspector_dock], [340], Qt.Orientation.Horizontal)
         self.resizeDocks([self.timeline_dock], [220], Qt.Orientation.Vertical)
+
+    def _all_docks(self) -> tuple[QDockWidget, ...]:
+        return (
+            self.library_dock,
+            self.layers_dock,
+            self.inspector_dock,
+            self.timeline_dock,
+            self.narration_dock,
+        )
 
     def _dock(self, title: str, widget: QWidget, area: Qt.DockWidgetArea, name: str) -> QDockWidget:
         dock = QDockWidget(title, self)
@@ -225,6 +245,19 @@ class MainWindow(QMainWindow):
             self.act_frame_next,
         ):
             m_anim.addAction(a)
+        m_narr = mb.addMenu("&Narration")
+        m_narr.addAction(self._action("Importer une &narration audio…", self.narration.audio.import_audio))
+        m_narr.addAction(
+            self._action(
+                "Ajouter un &sous-titre à l'image courante", self.narration.subtitles.add_at_current_frame
+            )
+        )
+        m_narr.addAction(
+            self._action("Importer des sous-titres (SRT/VTT)…", self.narration.subtitles.import_file)
+        )
+        m_narr.addAction(
+            self._action("Exporter les sous-titres (SRT)…", self.narration.subtitles.export_file)
+        )
         m_view = mb.addMenu("&Affichage")
         for a in (self.act_zoom_in, self.act_zoom_out, self.act_zoom_fit):
             m_view.addAction(a)
@@ -232,7 +265,7 @@ class MainWindow(QMainWindow):
         for a in (self.act_grid, self.act_snap, self.act_safe):
             m_view.addAction(a)
         m_view.addSeparator()
-        for dock in (self.library_dock, self.layers_dock, self.inspector_dock, self.timeline_dock):
+        for dock in self._all_docks():
             m_view.addAction(dock.toggleViewAction())
         m_view.addSeparator()
         m_view.addAction(self.act_reset_layout)
@@ -308,13 +341,16 @@ class MainWindow(QMainWindow):
 
     def reset_layout(self) -> None:
         self.settings.reset_window()
-        for dock in (self.library_dock, self.layers_dock, self.inspector_dock, self.timeline_dock):
+        for dock in self._all_docks():
             dock.setFloating(False)
             dock.show()
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.library_dock)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.layers_dock)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.inspector_dock)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.timeline_dock)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.narration_dock)
+        self.tabifyDockWidget(self.timeline_dock, self.narration_dock)
+        self.timeline_dock.raise_()
         self.resize(1400, 860)
         self.canvas.fit_to_view()
 
@@ -338,6 +374,10 @@ class MainWindow(QMainWindow):
         self.inspector.document = document
         self.timeline.document = document
         self.timeline.view.document = document
+        self.timeline.view.waveforms.clear()
+        self.narration.document = document
+        self.narration.audio.document = document
+        self.narration.subtitles.document = document
         self.act_undo.triggered.disconnect()
         self.act_redo.triggered.disconnect()
         self.act_undo.triggered.connect(document.undo.undo)
@@ -372,13 +412,22 @@ class MainWindow(QMainWindow):
         document.frameChanged.connect(self.timeline._on_frame)
         document.changed.connect(self.timeline._update_scroll)
         document.sceneChanged.connect(lambda _s: self.timeline._update_scroll())
+        document.changed.connect(self.timeline.load_waveforms)
+        document.sceneChanged.connect(lambda _s: self.timeline.load_waveforms())
+        document.changed.connect(self.narration.audio.refresh)
+        document.sceneChanged.connect(lambda _s: self.narration.audio.refresh())
+        document.changed.connect(self.narration.subtitles.refresh)
+        document.sceneChanged.connect(lambda _s: self.narration.subtitles.refresh())
         self._connect_document()
         self.timeline.pause()
         self.timeline.auto_key.setChecked(False)
         self.layers.refresh()
         self.inspector.rebuild()
+        self.narration.audio.refresh()
+        self.narration.subtitles.refresh()
         tv.rebuild_rows()
         self.timeline._on_frame(0)
+        self.timeline.load_waveforms()
         self.canvas.fit_to_view()
         if document.root is not None:
             self.settings.add_recent(document.root)

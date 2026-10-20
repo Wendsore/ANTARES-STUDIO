@@ -39,9 +39,10 @@ def _wait(qtbot, ms: int = 20) -> None:  # type: ignore[no-untyped-def]
 
 def test_ui07_startup_has_french_menus_and_docks(window) -> None:  # type: ignore[no-untyped-def]
     titles = [a.text().replace("&", "") for a in window.menuBar().actions()]
-    assert titles == ["Fichier", "Édition", "Objet", "Animation", "Affichage", "Aide"]
+    assert titles == ["Fichier", "Édition", "Objet", "Animation", "Narration", "Affichage", "Aide"]
     for dock in (window.library_dock, window.layers_dock, window.inspector_dock, window.timeline_dock):
         assert dock.isVisible()
+    assert window.narration_dock.widget() is window.narration and window.narration.tabs.count() == 2
     assert window.document.scene is not None
     assert "ANTARES Studio" in window.windowTitle()
 

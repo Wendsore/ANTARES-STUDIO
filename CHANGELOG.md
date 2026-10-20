@@ -2,6 +2,18 @@
 
 Toutes les évolutions **effectives** (pas les intentions). Format : date, lot, changements observables.
 
+## [0.1.0.dev0] — 2026-10-21 — Phase 6 : narration et sous-titres
+
+- Modèle et schéma v1 étendus (champs additifs, projets antérieurs lisibles) : `scene.audio` (clips : ressource, décalage en frames, gain, entrée/sortie, fondus, muet) et `scene.subtitles` (début, fin exclusive, texte) ; validation et commandes undo/redo associées.
+- Export : mixage audio par FFmpeg (`atrim`, `afade`, `volume`, `adelay`, `amix`, `apad`), la vidéo reste maître de la durée ; sous-titres incrustés par le même painter que la prévisualisation (bande inférieure, police proportionnelle à `min(largeur, hauteur)`), fichier `.srt` compagnon écrit à côté du MP4.
+- Panneau **Narration** (onglet à côté de la Timeline) : onglet Audio (import WAV/MP3/OGG/FLAC/M4A copié dans `audio/` avec SHA-256, placement à la tête de lecture, nom, début, gain, fondus, muet) ; onglet Sous-titres (ajout à la tête de lecture, édition en tableau, import/export SRT et VTT UTF-8, diagnostics : chevauchements, durée trop courte, ligne trop longue).
+- Timeline : piste « Sous-titres » (blocs) et une piste par clip audio avec forme d'onde (décodage FFmpeg 8 kHz mis en cache) ; glisser un clip modifie son décalage (annulable).
+- Lecture audio dans l'éditeur « au mieux » via QtMultimedia (silencieuse sans backend, sans erreur).
+- Menu **Narration** : importer un fichier audio, ajouter un sous-titre, importer/exporter des sous-titres.
+- Modèles intégrés : légendes remontées au-dessus de la bande réservée aux sous-titres.
+- Correctifs CI : garde documentaire redéfinie autour de « MVP candidat : » ; suppression du `.part` tolérante au verrou tardif de Windows.
+- Tests : 7 d'intégration audio (AUD-01, 02, 03, 04, 05, 09, fichier manquant), 6 unitaires sous-titres (AUD-06, 07, 08), 4 d'interface narration ; suite totale 85 tests.
+
 ## [0.1.0.dev0] — 2026-10-21 — Phases 1 à 4 : éditeur utilisable
 
 - Application `antares-studio` (PySide6, interface en français) : fenêtre avec docks Bibliothèque, Scènes et objets, Inspecteur, Timeline ; disposition persistante et réinitialisable.
