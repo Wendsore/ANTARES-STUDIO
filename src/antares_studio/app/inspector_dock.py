@@ -27,7 +27,13 @@ from PySide6.QtWidgets import (
 from antares_studio.app import theme
 from antares_studio.app.document import ProjectDocument
 from antares_studio.domain.colors import format_color, is_color, parse_color
-from antares_studio.domain.commands import RemoveKeyframe, RemoveTrack, SetKeyframe, SetSceneProperty
+from antares_studio.domain.commands import (
+    RemoveKeyframe,
+    RemoveTrack,
+    SetKeyframe,
+    SetProjectMetadata,
+    SetSceneProperty,
+)
 from antares_studio.domain.kinds import BASE_LABELS, KINDS, ParamSpec
 from antares_studio.domain.model import Node
 from antares_studio.domain.properties import is_animatable
@@ -76,6 +82,7 @@ class InspectorDock(QWidget):
         self._key_buttons: dict[str, QToolButton] = {}
         self._node_id: str | None = None
         self._updating = False
+        self.sources_button: QPushButton | None = None
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         self.scroll_area = QScrollArea()
@@ -164,9 +171,69 @@ class InspectorDock(QWidget):
         self.form.addRow("Fond :", bg)
         c = self.document.project.canvas
         self.form.addRow(QLabel(f"Canevas : {c.width} × {c.height} px, {float(c.fps):g} images/s"))
+        self._build_metadata_form()
         hint = QLabel("Sélectionnez un objet pour modifier ses propriétés.")
         hint.setWordWrap(True)
         self.form.addRow(hint)
+
+    def _build_metadata_form(self) -> None:
+        """Métadonnées scientifiques du projet (SCI-07/08) : représentation, échelle, notes, sources."""
+        meta = self.document.project.scientific_metadata
+        self.form.addRow(QLabel("<b>Métadonnées scientifiques</b>"))
+        repr_box = QComboBox()
+        repr_box.addItem("Schématique", "schematic")
+        repr_box.addItem("À l'échelle", "to_scale")
+        repr_box.addItem("Mixte (préciser dans les notes)", "mixed")
+        idx = repr_box.findData(str(meta.get("representation", "schematic")))
+        repr_box.setCurrentIndex(max(0, idx))
+        repr_box.currentIndexChanged.connect(
+            lambda _i: self._meta("representation", str(repr_box.currentData()))
+        )
+        self.form.addRow("Représentation :", repr_box)
+        to_scale = QCheckBox("Distances et tailles à l'échelle")
+        to_scale.setChecked(bool(meta.get("to_scale", False)))
+        to_scale.setToolTip("Décoché : un avertissement « non à l'échelle » est attendu dans la vidéo.")
+        to_scale.toggled.connect(lambda on: self._meta("to_scale", bool(on)))
+        self.form.addRow("", to_scale)
+        notes = QLineEdit(str(meta.get("notes", "")))
+        notes.setPlaceholderText("Simplifications, hypothèses…")
+        notes.editingFinished.connect(lambda: self._meta("notes", notes.text().strip()))
+        self.form.addRow("Notes :", notes)
+        sources = meta.get("sources", [])
+        n = len(sources) if isinstance(sources, list) else 0
+        self.sources_button = QPushButton(f"Sources… ({n})")
+        self.sources_button.setToolTip(
+            "\n".join(
+                f"{s.get('label', '')} {s.get('url', '')}".strip()
+                for s in (sources if isinstance(sources, list) else [])
+                if isinstance(s, dict)
+            )
+            or "Aucune source référencée"
+        )
+        self.sources_button.clicked.connect(self._edit_sources)
+        self.form.addRow("Sources :", self.sources_button)
+
+    def _refresh_metadata(self) -> None:
+        button = getattr(self, "sources_button", None)
+        if button is None:
+            return
+        sources = self.document.project.scientific_metadata.get("sources", [])
+        n = len(sources) if isinstance(sources, list) else 0
+        try:
+            button.setText(f"Sources… ({n})")
+        except RuntimeError:  # bouton détruit par une reconstruction du formulaire
+            self.sources_button = None
+
+    def _meta(self, key: str, value: Any) -> None:
+        if self.document.project.scientific_metadata.get(key) == value:
+            return
+        self.document.push(SetProjectMetadata(key, value))
+
+    def _edit_sources(self) -> None:
+        from antares_studio.app.provenance_dialog import SourcesDialog
+
+        SourcesDialog(self.document, self).exec()
+        self.rebuild()
 
     def _scene_attr(self, attr: str, value: Any) -> None:
         scene = self.document.scene
@@ -267,6 +334,7 @@ class InspectorDock(QWidget):
     # --- synchronisation --------------------------------------------------
     def refresh_values(self) -> None:
         if self._node_id is None:
+            self._refresh_metadata()
             return
         scene = self.document.scene
         state = self.document.state()

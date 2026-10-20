@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -40,7 +41,7 @@ from antares_studio.domain.commands import (
     SetAudioClipAttr,
     SetSubtitleAttr,
 )
-from antares_studio.domain.model import AudioClip, Subtitle
+from antares_studio.domain.model import Asset, AudioClip, Subtitle
 from antares_studio.rendering import ffmpeg as ff
 
 ID_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -51,6 +52,7 @@ class AudioTab(QWidget):
 
     def __init__(self, document: ProjectDocument, settings: AppSettings, parent: QWidget | None = None):
         super().__init__(parent)
+        self.provenance_prompt: Callable[[Asset], object] | None = None  # posé par la fenêtre principale
         self.document = document
         self.settings = settings
         self._updating = False
@@ -183,7 +185,11 @@ class AudioTab(QWidget):
         )
         if not path:
             return
-        self.add_audio_file(Path(path))
+        clip = self.add_audio_file(Path(path))
+        if clip is not None and self.provenance_prompt is not None:
+            asset = self.document.project.asset(clip.asset_id)
+            if asset is not None:
+                self.provenance_prompt(asset)
 
     def add_audio_file(self, path: Path) -> AudioClip | None:
         """Importe le fichier dans ``audio/``, mesure sa durée et crée le clip à l'image courante."""

@@ -28,16 +28,25 @@ from antares_studio.app.layers_dock import LayersDock
 from antares_studio.app.library_dock import LibraryDock
 from antares_studio.app.narration_dock import NarrationDock
 from antares_studio.app.preset_dialog import PresetDialog
+from antares_studio.app.provenance_dialog import LicenseInventoryDialog, edit_asset_provenance
 from antares_studio.app.settings import AppSettings
 from antares_studio.app.timeline_dock import TimelineDock
-from antares_studio.domain.commands import AddNode, AddScene, RemoveNode, ReplaceTracks, SetProperties
+from antares_studio.domain.commands import (
+    AddNode,
+    AddScene,
+    RemoveNode,
+    ReplaceTracks,
+    SetProjectMetadata,
+    SetProperties,
+)
 from antares_studio.domain.ids import new_id
 from antares_studio.domain.kinds import spec_for
 from antares_studio.domain.model import Canvas, Node, Scene
 from antares_studio.domain.validation import ProjectValidationError
 from antares_studio.persistence.schema import ProjectFormatError
 from antares_studio.persistence.store import PROJECT_SUFFIX, ProjectStore, resolve_project_root
-from antares_studio.resources.templates import TEMPLATES, create_project, template_labels
+from antares_studio.resources.licenses import inventory
+from antares_studio.resources.templates import TEMPLATES, create_project, scale_warning_node, template_labels
 from antares_studio.timeline.presets import apply_preset
 
 
@@ -65,10 +74,12 @@ class MainWindow(QMainWindow):
 
     # --- construction UI ---------------------------------------------------
     def _build_docks(self) -> None:
-        self.library = LibraryDock(template_labels())
+        self.library = LibraryDock(template_labels(), self.settings.favorites())
         self.library.addRequested.connect(self.add_node_of_kind)
         self.library.presetRequested.connect(self.apply_preset_to_selection)
         self.library.templateRequested.connect(self.add_template_scene)
+        self.library.assetActivated.connect(self.edit_asset_provenance)
+        self.library.favoritesChanged.connect(self.settings.set_favorites)
         self.library_dock = self._dock(
             "Bibliothèque", self.library, Qt.DockWidgetArea.LeftDockWidgetArea, "dock_library"
         )
@@ -86,6 +97,9 @@ class MainWindow(QMainWindow):
             "Timeline", self.timeline, Qt.DockWidgetArea.BottomDockWidgetArea, "dock_timeline"
         )
         self.narration = NarrationDock(self.document, self.settings)
+        self.narration.audio.provenance_prompt = lambda asset: edit_asset_provenance(
+            self.document, asset, self
+        )
         self.narration_dock = self._dock(
             "Narration (audio et sous-titres)",
             self.narration,
@@ -96,6 +110,7 @@ class MainWindow(QMainWindow):
         self.timeline_dock.raise_()
         self.resizeDocks([self.library_dock, self.layers_dock], [360, 420], Qt.Orientation.Vertical)
         self.resizeDocks([self.inspector_dock], [340], Qt.Orientation.Horizontal)
+        self.resizeDocks([self.library_dock, self.layers_dock], [300, 300], Qt.Orientation.Horizontal)
         self.resizeDocks([self.timeline_dock], [220], Qt.Orientation.Vertical)
 
     def _all_docks(self) -> tuple[QDockWidget, ...]:
@@ -138,6 +153,10 @@ class MainWindow(QMainWindow):
             "Enregistrer &sous…", self.save_project_as, QKeySequence.StandardKey.SaveAs
         )
         self.act_export = self._action("E&xporter la vidéo…", self.export_video, "Ctrl+E")
+        self.act_inventory = self._action("Inventaire des &licences et crédits…", self.show_inventory)
+        self.act_scale_warning = self._action(
+            "Avertissement d'é&chelle (« non à l'échelle »)", self.add_scale_warning
+        )
         self.act_quit = self._action("&Quitter", self.close, QKeySequence.StandardKey.Quit)
         self.act_undo = self._action("&Annuler", self.document.undo.undo, QKeySequence.StandardKey.Undo)
         self.act_redo = self._action("&Rétablir", self.document.undo.redo, QKeySequence.StandardKey.Redo)
@@ -200,6 +219,7 @@ class MainWindow(QMainWindow):
             m_file.addAction(a)
         m_file.addSeparator()
         m_file.addAction(self.act_export)
+        m_file.addAction(self.act_inventory)
         m_file.addSeparator()
         m_file.addAction(self.act_quit)
         m_edit = mb.addMenu("&Édition")
@@ -222,12 +242,14 @@ class MainWindow(QMainWindow):
             "arrow",
             "orbit_path",
             "text",
+            "callout",
             "image",
             "group",
         ):
             spec = spec_for(kind)
             m_add.addAction(self._action(spec.label, lambda _c=False, k=kind: self.add_node_of_kind(k)))
         m_add.addSeparator()
+        m_add.addAction(self.act_scale_warning)
         m_add.addAction(self._action("Importer une &image…", self.import_image, "Ctrl+I"))
         m_anim = mb.addMenu("&Animation")
         from antares_studio.timeline.presets import PRESETS
@@ -307,6 +329,8 @@ class MainWindow(QMainWindow):
         d.dirtyChanged.connect(lambda _d: self._refresh_title())
         d.pathChanged.connect(self._refresh_title)
         d.selectionChanged.connect(lambda _s: self._refresh_actions())
+        d.changed.connect(self._refresh_inventory)
+        self._refresh_inventory()
         self._refresh_actions()
         self._refresh_title()
 
@@ -674,6 +698,30 @@ class MainWindow(QMainWindow):
             self.document.push(
                 SetProperties(scene.id, node.id, {"params.asset_id": asset.id, "name": Path(path).stem})
             )
+        edit_asset_provenance(self.document, asset, self)
+
+    def edit_asset_provenance(self, asset_id: str) -> None:
+        asset = self.document.project.asset(asset_id)
+        if asset is not None:
+            edit_asset_provenance(self.document, asset, self)
+
+    def _refresh_inventory(self) -> None:
+        self.library.set_inventory(inventory(self.document.project))
+
+    def show_inventory(self) -> None:
+        LicenseInventoryDialog(self.document, self).exec()
+
+    def add_scale_warning(self) -> Node | None:
+        """Ajoute l'encadré « non à l'échelle » (SCI-07) et marque le projet comme schématique."""
+        scene = self.document.scene
+        if scene is None:
+            return None
+        node = scale_warning_node(self.document.project.canvas)
+        self.document.push(AddNode(scene.id, node))
+        if self.document.project.scientific_metadata.get("to_scale") is not False:
+            self.document.push(SetProjectMetadata("to_scale", False))
+        self.document.set_selection([node.id])
+        return node
 
     def delete_selection(self) -> None:
         scene = self.document.scene
