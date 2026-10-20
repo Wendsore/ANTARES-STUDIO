@@ -51,12 +51,20 @@ Ouvrez l'onglet **Narration** (à côté de la Timeline, ou `Affichage > Narrati
 
 Le son de l'éditeur est joué « au mieux » (il peut rester silencieux selon la machine) ; l'export, lui, mixe toujours exactement les clips.
 
-## 7. Exporter la vidéo
+## 7. Provenance, sources et crédits
 
-`Fichier > Exporter la vidéo…` (Ctrl+E) : choisissez **Final 1080p** (ou **Brouillon 720p** pour vérifier rapidement), le fichier de sortie, puis « Exporter ». La progression s'affiche ; « Annuler l'export » arrête proprement sans laisser de fichier partiel. À la fin, le fichier est vérifié (résolution, cadence, nombre d'images, piste audio) et un `*.manifest.json` décrit le rendu. Les sous-titres sont incrustés dans l'image et aussi écrits dans un fichier `.srt` à côté de la vidéo.
+- **Avertissement d'échelle** : les modèles scientifiques affichent un encadré « non à l'échelle ». Pour l'ajouter à une scène créée à la main : `Objet > Avertissement d'échelle`. Le texte se modifie dans l'inspecteur.
+- **Sources scientifiques** : sans objet sélectionné, l'inspecteur montre les **Métadonnées scientifiques** (représentation, à l'échelle, notes, bouton `Sources…`). Les sources apparaissent dans les crédits.
+- **Provenance des images et sons** : après chaque import, une fiche demande l'auteur, la source et la licence. « Plus tard » laisse la ressource en « provenance manquante » (visible dans l'onglet **Ressources** de la bibliothèque, double-clic pour compléter). À l'export, une ressource sans provenance ou non redistribuable est signalée.
+- **Crédits** : `Fichier > Inventaire des licences et crédits…` liste les ressources et le texte de crédits ; ce texte est écrit à côté de chaque vidéo exportée (`*.credits.txt`). Pour les afficher dans la vidéo, ajoutez le modèle **Crédits** depuis la bibliothèque (onglet Modèles).
+- **Favoris** : cochez la case d'un objet, d'une animation ou d'un modèle ; le bouton ★ n'affiche que vos favoris.
+
+## 8. Exporter la vidéo
+
+`Fichier > Exporter la vidéo…` (Ctrl+E) : choisissez **Final 1080p** (ou **Brouillon 720p** pour vérifier rapidement), le fichier de sortie, puis « Exporter ». La progression s'affiche ; « Annuler l'export » arrête proprement sans laisser de fichier partiel. À la fin, le fichier est vérifié (résolution, cadence, nombre d'images, piste audio) et un `*.manifest.json` décrit le rendu. Les sous-titres sont incrustés dans l'image et aussi écrits dans un fichier `.srt` à côté de la vidéo ; les crédits dans un fichier `.credits.txt`.
 
 FFmpeg doit être installé (`Aide > Diagnostics…` l'indique ; `Aide > Chemin de FFmpeg…` permet de le désigner manuellement).
 
 ## Ce qui n'est pas encore disponible
 
-Enregistrement micro, crédits automatiques (phase 5), recherche d'icônes dans des packs, équations LaTeX, 3D. Voir `docs/PROJECT_STATUS.md`.
+Enregistrement micro, packs d'icônes tiers, équations LaTeX, simulations physiques, 3D, installateur Windows. Voir `docs/PROJECT_STATUS.md`.

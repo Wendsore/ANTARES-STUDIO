@@ -7,7 +7,16 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from antares_studio.domain.model import AudioClip, Keyframe, Node, Project, Scene, Subtitle, Track
+from antares_studio.domain.model import (
+    AssetLicense,
+    AudioClip,
+    Keyframe,
+    Node,
+    Project,
+    Scene,
+    Subtitle,
+    Track,
+)
 from antares_studio.domain.properties import get_property, set_property
 
 
@@ -588,3 +597,47 @@ class ReplaceSubtitles:
 
     def undo(self, project: Project) -> None:
         project.scene(self.scene_id).subtitles = self._old
+
+
+@dataclass
+class SetAssetLicense:
+    """Renseigne la fiche de provenance/licence d'une ressource (AST-03, AST-06)."""
+
+    asset_id: str
+    license: AssetLicense
+    label: str = "Provenance de la ressource"
+    _old: AssetLicense | None = field(default=None, repr=False)
+
+    def do(self, project: Project) -> None:
+        asset = project.asset(self.asset_id)
+        if asset is None:
+            raise KeyError(self.asset_id)
+        self._old = asset.license
+        asset.license = self.license
+
+    def undo(self, project: Project) -> None:
+        asset = project.asset(self.asset_id)
+        if asset is not None and self._old is not None:
+            asset.license = self._old
+
+
+@dataclass
+class SetProjectMetadata:
+    """Modifie une clé des métadonnées scientifiques du projet (représentation, échelle, sources…)."""
+
+    key: str
+    value: Any
+    label: str = "Métadonnées scientifiques"
+    _old: Any = field(default=None, repr=False)
+    _had: bool = field(default=False, repr=False)
+
+    def do(self, project: Project) -> None:
+        self._had = self.key in project.scientific_metadata
+        self._old = copy.deepcopy(project.scientific_metadata.get(self.key))
+        project.scientific_metadata[self.key] = copy.deepcopy(self.value)
+
+    def undo(self, project: Project) -> None:
+        if self._had:
+            project.scientific_metadata[self.key] = self._old
+        else:
+            project.scientific_metadata.pop(self.key, None)

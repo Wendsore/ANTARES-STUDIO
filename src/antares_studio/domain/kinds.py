@@ -136,6 +136,27 @@ KINDS: dict[str, KindSpec] = {
             ),
         ),
         KindSpec(
+            "callout",
+            "Encadré (légende, avertissement)",
+            params=(
+                ParamSpec("text", "str", "Schéma : distances et tailles non à l'échelle", False, "Texte"),
+                ParamSpec("font_family", "str", "DejaVu Sans", False, "Police"),
+                ParamSpec("font_size", "float", 30.0, True, "Taille", min=1),
+                ParamSpec("bold", "bool", False, False, "Gras"),
+                ParamSpec("padding", "float", 18.0, True, "Marge intérieure", min=0),
+                ParamSpec("corner_radius", "float", 10.0, False, "Arrondi", min=0),
+                ParamSpec("max_width", "float", 0.0, False, "Largeur max (0 = libre)", min=0),
+            ),
+            style=(
+                ParamSpec("fill", "color", "#263238CC", animatable=True, label="Fond"),
+                ParamSpec("text_color", "color", "#FFFFFF", animatable=True, label="Couleur du texte"),
+                ParamSpec("stroke", "color", "#F2A93B", animatable=True, label="Bordure"),
+                ParamSpec(
+                    "stroke_width", "float", 2.0, animatable=True, label="Épaisseur de la bordure", min=0
+                ),
+            ),
+        ),
+        KindSpec(
             "image",
             "Image",
             params=(

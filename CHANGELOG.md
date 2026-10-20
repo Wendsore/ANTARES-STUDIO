@@ -2,6 +2,17 @@
 
 Toutes les évolutions **effectives** (pas les intentions). Format : date, lot, changements observables.
 
+## [0.1.0.dev0] — 2026-10-21 — Phase 5 : provenance, crédits, avertissement d'échelle, parcours P1
+
+- Fiche de provenance (auteur, source, licence parmi une liste, attribution, redistribution) proposée après chaque import d'image ou d'audio, modifiable depuis l'onglet **Ressources** de la bibliothèque ou `Fichier > Inventaire des licences et crédits…` (statut par ressource, usages, crédits générés, copie/enregistrement).
+- Export : avertissement par ressource utilisée sans provenance ou non redistribuable ; fichier `<vidéo>.credits.txt` (sources scientifiques, mention « non à l'échelle », ressources attribuées, logiciel) et crédits + métadonnées scientifiques dans le manifest.
+- Nouvel objet **Encadré** (`callout`) et action `Objet > Avertissement d'échelle` ; les modèles Lune, année-lumière et orbite portent l'avertissement en encadré, hors de la bande des sous-titres.
+- Nouveaux modèles **Introduction** et **Crédits** (scène générée depuis les sources, ressources et le logiciel).
+- Inspecteur : section **Métadonnées scientifiques** (représentation, à l'échelle, notes, sources éditables, annulables).
+- Bibliothèque : favoris ★ (cases à cocher, filtre, persistés dans les préférences), recherche étendue aux modèles.
+- Tests : AST-03/05/06, SCI-07/08 et parcours P1 complet par l'interface (Gate 5) ; suite totale 97 tests.
+- ADR-0003 : provenance, inventaire et crédits.
+
 ## [0.1.0.dev0] — 2026-10-21 — Phase 6 : narration et sous-titres
 
 - Modèle et schéma v1 étendus (champs additifs, projets antérieurs lisibles) : `scene.audio` (clips : ressource, décalage en frames, gain, entrée/sortie, fondus, muet) et `scene.subtitles` (début, fin exclusive, texte) ; validation et commandes undo/redo associées.

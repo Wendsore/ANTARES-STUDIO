@@ -64,6 +64,14 @@ class AppSettings:
         v = self._s.value("edit/autosave_interval_s", 60, type=int)
         return int(v) if isinstance(v, int) and v > 0 else 60
 
+    def favorites(self) -> list[str]:
+        """Favoris de la bibliothèque (identifiants « objet:kind », « animation:id », « modèle:id »)."""
+        raw = self._s.value("library/favorites", [], type=list)
+        return [str(x) for x in raw] if isinstance(raw, list) else []
+
+    def set_favorites(self, ids: list[str]) -> None:
+        self._s.setValue("library/favorites", sorted(set(ids)))
+
     def last_directory(self) -> str:
         return str(self._s.value("files/last_directory", str(Path.home()), type=str) or str(Path.home()))
 

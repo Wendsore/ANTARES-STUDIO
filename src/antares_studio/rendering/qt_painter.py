@@ -370,6 +370,34 @@ def _draw_text(painter: QPainter, node: NodeState, assets: AssetResolver | None,
     painter.drawText(rect, flags, text)
 
 
+def callout_rect(params: dict[str, Any]) -> QRectF:
+    """Rectangle local de l'encadré : zone de texte élargie de la marge intérieure."""
+    rect, _ = text_layout_rect(params)
+    pad = float(params.get("padding", 18.0) or 0.0)
+    return rect.adjusted(-pad, -pad, pad, pad)
+
+
+def _draw_callout(
+    painter: QPainter, node: NodeState, assets: AssetResolver | None, cache: ImageCache
+) -> None:
+    text = str(node.params.get("text", ""))
+    if not text:
+        return
+    box = callout_rect(node.params)
+    radius = float(node.params.get("corner_radius", 10.0) or 0.0)
+    stroke_w = float(node.style.get("stroke_width", 0.0) or 0.0)
+    painter.setBrush(QBrush(qcolor(node.style.get("fill", "#263238CC"))))
+    if stroke_w > 0:
+        painter.setPen(QPen(qcolor(node.style.get("stroke", "#F2A93B")), stroke_w))
+    else:
+        painter.setPen(Qt.PenStyle.NoPen)
+    painter.drawRoundedRect(box, radius, radius)
+    rect, flags = text_layout_rect(node.params)
+    painter.setFont(text_font(node.params))
+    painter.setPen(QPen(qcolor(node.style.get("text_color", "#FFFFFF"))))
+    painter.drawText(rect, flags, text)
+
+
 def _draw_image(painter: QPainter, node: NodeState, assets: AssetResolver | None, cache: ImageCache) -> None:
     w = float(node.params.get("width", 300.0))
     h = float(node.params.get("height", 0.0) or 0.0)
@@ -414,6 +442,7 @@ _DRAWERS: dict[str, Callable[[QPainter, NodeState, AssetResolver | None, ImageCa
     "arrow": _draw_arrow,
     "orbit_path": _draw_orbit_path,
     "text": _draw_text,
+    "callout": _draw_callout,
     "image": _draw_image,
     "group": _draw_group,
 }
@@ -453,6 +482,8 @@ def local_bounds(node: NodeState) -> QRectF:
     if k == "text":
         rect, _ = text_layout_rect(p)
         return rect
+    if k == "callout":
+        return callout_rect(p)
     if k == "image":
         w = float(p.get("width", 300.0))
         h = float(p.get("height", 0.0) or 0.0) or w * 0.75
