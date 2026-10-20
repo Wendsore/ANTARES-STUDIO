@@ -152,6 +152,29 @@ def test_mod06_project_folder_is_portable(tmp_path: Path) -> None:
     assert store.load(moved) == project
 
 
+def test_mod09_autosaves_in_same_clock_tick_never_overwrite(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Régression CI Windows : deux autosaves dans la même milliseconde partageaient le même nom."""
+    project, *_ = earth_moon_project()
+    store = ProjectStore()
+    paths = store.create(tmp_path / "S", project)
+    fixed = store_mod.datetime(2026, 10, 21, 12, 0, 0, 123456, tzinfo=store_mod.UTC)
+
+    class FrozenDatetime(store_mod.datetime):
+        @classmethod
+        def now(cls, tz=None):  # type: ignore[no-untyped-def,override]
+            return fixed
+
+    monkeypatch.setattr(store_mod, "datetime", FrozenDatetime)
+    project.title = "v1"
+    a1 = store.autosave(project, paths.root)
+    project.title = "v2"
+    a2 = store.autosave(project, paths.root)
+    assert a1 != a2 and a1.is_file() and a2.is_file()
+    assert store.list_autosaves(paths.root) == [a2, a1]
+    found = store.latest_valid_autosave(paths.root)
+    assert found is not None and found[1].title == "v2"
+
+
 def test_mod09_autosave_and_recovery(tmp_path: Path) -> None:
     project, *_ = earth_moon_project()
     store = ProjectStore()
