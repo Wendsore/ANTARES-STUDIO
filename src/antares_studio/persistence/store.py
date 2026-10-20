@@ -136,7 +136,13 @@ class ProjectStore:
         paths = ProjectPaths(resolve_project_root(Path(root)))
         paths.autosaves.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-        target = paths.autosaves / f"autosave-{stamp}.json"
+        # suffixe de séquence : deux autosaves dans la même résolution d'horloge (Windows : ~1 ms)
+        # ne doivent jamais s'écraser ; l'ordre lexicographique reste chronologique
+        seq = 0
+        target = paths.autosaves / f"autosave-{stamp}-{seq:03d}.json"
+        while target.exists():
+            seq += 1
+            target = paths.autosaves / f"autosave-{stamp}-{seq:03d}.json"
         payload = json.dumps(project_to_dict(project), ensure_ascii=False, indent=2, allow_nan=False) + "\n"
         tmp = target.with_suffix(".json.tmp")
         tmp.write_text(payload, encoding="utf-8")
