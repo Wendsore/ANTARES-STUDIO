@@ -19,7 +19,7 @@ class DocumentationTests(unittest.TestCase):
         self.assertIn("PoC", content)
 
     def test_status_does_not_claim_mvp_is_done_without_proof(self) -> None:
-        """Le statut porte explicitement l'état du MVP ; « MVP candidat : oui » exige un parcours P1 prouvé."""
+        """Le statut porte l'état du MVP ; « MVP candidat : oui » exige un parcours P1 prouvé."""
         content = (ROOT / "docs/PROJECT_STATUS.md").read_text(encoding="utf-8")
         self.assertIn("MVP candidat :", content)
         if "MVP candidat : oui" in content:

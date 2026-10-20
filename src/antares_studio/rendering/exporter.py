@@ -19,12 +19,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from antares_studio.audio.subtitles import format_srt
 from antares_studio.domain.model import Project
 from antares_studio.domain.validation import ProjectValidationError, validate_project
 from antares_studio.persistence.schema import project_to_dict
 from antares_studio.rendering import ffmpeg as ff
-from antares_studio.rendering.plan import AudioClipPlan, RenderPlan
+from antares_studio.rendering.plan import RenderPlan
 from antares_studio.rendering.qt_painter import AssetResolver, ImageCache, render_state_to_image
 from antares_studio.timeline.evaluator import evaluate
 
@@ -98,40 +97,13 @@ def _build_ffmpeg_command(ffmpeg: Path, plan: RenderPlan, tmp_output: Path) -> l
         filters.append("".join(chain) + ",".join(parts) + f"[a{idx}]")
         labels.append(f"[a{idx}]")
     if labels:
-        # la vidéo est maître : l'audio est complété par du silence (apad) puis coupé à la durée (-t)
-        mix = "".join(labels) + f"amix=inputs={len(labels)}:normalize=0:duration=longest[mix];[mix]apad[aout]"
+        mix = "".join(labels) + f"amix=inputs={len(labels)}:normalize=0:duration=longest[aout]"
         filters.append(mix)
         cmd += ["-filter_complex", ";".join(filters), "-map", "0:v:0", "-map", "[aout]"]
-        cmd += ["-c:a", profile.audio_codec, "-b:a", profile.audio_bitrate]
+        cmd += ["-c:a", profile.audio_codec, "-b:a", profile.audio_bitrate, "-shortest"]
     cmd += profile.ffmpeg_video_args()
     cmd += ["-t", f"{plan.duration_seconds:.6f}", "-f", profile.container, str(tmp_output)]
     return cmd
-
-
-def audio_plans_for_scene(
-    project: Project, scene_id: str, assets: AssetResolver | None
-) -> tuple[AudioClipPlan, ...]:
-    """Convertit les clips audio de la scène en entrées de plan (fichiers résolus, clips muets ignorés)."""
-    scene = project.scene(scene_id)
-    plans: list[AudioClipPlan] = []
-    for clip in scene.audio:
-        if clip.muted or clip.gain <= 0.0:
-            continue
-        path = assets(clip.asset_id) if assets else None
-        if path is None:
-            raise RenderError(f"Fichier audio introuvable pour le clip « {clip.name or clip.id} ».")
-        plans.append(
-            AudioClipPlan(
-                path=str(path),
-                offset_frames=clip.offset_frames,
-                gain=clip.gain,
-                in_seconds=clip.in_seconds,
-                out_seconds=clip.out_seconds,
-                fade_in_seconds=clip.fade_in_seconds,
-                fade_out_seconds=clip.fade_out_seconds,
-            )
-        )
-    return tuple(plans)
 
 
 def export_video(
@@ -183,15 +155,7 @@ def export_video(
             if cancel.is_set():
                 raise RenderCancelledError("export annulé")
             state = evaluate(project, scene.id, plan.start_frame + i)
-            img = render_state_to_image(
-                state,
-                project.canvas,
-                plan.width,
-                plan.height,
-                assets,
-                cache,
-                subtitle_style=project.subtitle_style,
-            )
+            img = render_state_to_image(state, project.canvas, plan.width, plan.height, assets, cache)
             data = bytes(img.constBits())
             if len(data) != frame_bytes:
                 raise RenderError("taille d'image inattendue (stride non contigu)")
@@ -216,17 +180,6 @@ def export_video(
         raise RenderError(f"Erreur pendant l'export : {exc}", encoder.stderr_text()) from exc
     elapsed = time.perf_counter() - t0
     manifest_path = output.with_suffix(output.suffix + ".manifest.json")
-    if scene.subtitles:
-        # fichier SRT compagnon (les sous-titres sont aussi incrustés dans l'image)
-        srt_path = output.with_suffix(".srt")
-        shifted = [s for s in scene.subtitles if s.end_frame > plan.start_frame]
-        from antares_studio.domain.model import Subtitle
-
-        rel = [
-            Subtitle(s.id, max(0, s.start_frame - plan.start_frame), s.end_frame - plan.start_frame, s.text)
-            for s in shifted
-        ]
-        srt_path.write_text(format_srt(rel, project.canvas.fps), encoding="utf-8")
     if write_manifest:
         _write_manifest(manifest_path, project, plan, result, elapsed, ffmpeg, ffprobe)
     return RenderResult(output, manifest_path, result, elapsed, plan)
