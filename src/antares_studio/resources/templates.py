@@ -64,7 +64,7 @@ def build_moon_phases(project: Project, scene: Scene) -> None:
         "text",
         "Légende",
         cx,
-        c.height - 90 * k,
+        c.height - 250 * k,  # au-dessus de la bande réservée aux sous-titres
         text="Schéma : distances et tailles non à l'échelle",
         font_size=30 * k,
     )
@@ -127,7 +127,7 @@ def build_scale_comparison(project: Project, scene: Scene) -> None:
         "text",
         "Source",
         cx,
-        c.height - 70 * k,
+        c.height - 250 * k,  # au-dessus de la bande réservée aux sous-titres
         text="Constantes : IAU 2012 (ua), CODATA (c)",
         font_size=26 * k,
     )
@@ -176,7 +176,7 @@ def build_orbit_vectors(project: Project, scene: Scene) -> None:
         "text",
         "Légende",
         cx,
-        c.height - 80 * k,
+        c.height - 250 * k,  # au-dessus de la bande réservée aux sous-titres
         text="Orbite circulaire schématique — v (orange) tangent, g (rouge) vers l'astre",
         font_size=28 * k,
     )

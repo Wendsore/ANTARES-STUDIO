@@ -108,6 +108,38 @@ def validate_scene(scene: Scene, prefix: str = "scene") -> list[ValidationIssue]
                 )
     for cycle in find_parent_cycles(scene):
         issues.append(ValidationIssue(f"{prefix}.nodes", f"cycle de parenté : {' -> '.join(cycle)}"))
+    seen_clip: set[str] = set()
+    for ci, clip in enumerate(scene.audio):
+        cp = f"{prefix}.audio[{ci}]"
+        if not is_valid_id(clip.id) or clip.id in seen_clip:
+            issues.append(ValidationIssue(f"{cp}.id", "identifiant de clip invalide ou dupliqué"))
+        seen_clip.add(clip.id)
+        if (
+            not isinstance(clip.offset_frames, int)
+            or isinstance(clip.offset_frames, bool)
+            or clip.offset_frames < 0
+        ):
+            issues.append(ValidationIssue(f"{cp}.offset_frames", "décalage entier >= 0 attendu"))
+        if not is_finite_number(clip.gain) or not 0.0 <= clip.gain <= 4.0:
+            issues.append(ValidationIssue(f"{cp}.gain", "gain entre 0 et 4 attendu"))
+        if not is_finite_number(clip.in_seconds) or clip.in_seconds < 0:
+            issues.append(ValidationIssue(f"{cp}.in_seconds", "début >= 0 attendu"))
+        if clip.out_seconds is not None and (
+            not is_finite_number(clip.out_seconds) or clip.out_seconds <= clip.in_seconds
+        ):
+            issues.append(ValidationIssue(f"{cp}.out_seconds", "fin > début attendue"))
+        for attr in ("fade_in_seconds", "fade_out_seconds"):
+            v = getattr(clip, attr)
+            if not is_finite_number(v) or v < 0:
+                issues.append(ValidationIssue(f"{cp}.{attr}", "durée de fondu >= 0 attendue"))
+    seen_sub: set[str] = set()
+    for si2, sub in enumerate(scene.subtitles):
+        sp = f"{prefix}.subtitles[{si2}]"
+        if not is_valid_id(sub.id) or sub.id in seen_sub:
+            issues.append(ValidationIssue(f"{sp}.id", "identifiant de sous-titre invalide ou dupliqué"))
+        seen_sub.add(sub.id)
+        if sub.start_frame < 0 or sub.end_frame <= sub.start_frame:
+            issues.append(ValidationIssue(f"{sp}", "plage de sous-titre invalide (fin > début >= 0)"))
     for ti, track in enumerate(scene.tracks):
         tp = f"{prefix}.tracks[{ti}]"
         if track.target_id not in ids:

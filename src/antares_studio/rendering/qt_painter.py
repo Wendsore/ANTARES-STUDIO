@@ -26,7 +26,7 @@ from PySide6.QtGui import (
 )
 
 from antares_studio.domain.colors import is_color, parse_color
-from antares_studio.domain.model import Canvas
+from antares_studio.domain.model import DEFAULT_SUBTITLE_STYLE, Canvas
 from antares_studio.timeline.evaluator import NodeState, SceneState
 
 AssetResolver = Callable[[str], Path | None]
@@ -75,6 +75,7 @@ def paint_scene_state(
     assets: AssetResolver | None = None,
     image_cache: ImageCache | None = None,
     paint_background: bool = True,
+    subtitle_style: dict[str, Any] | None = None,
 ) -> None:
     """Dessine ``state`` dans un rectangle ``target_width × target_height`` (mise à l'échelle uniforme)."""
     painter.save()
@@ -97,7 +98,82 @@ def paint_scene_state(
         painter.setOpacity(node.world_opacity)
         paint_node(painter, node, assets, cache)
         painter.restore()
+    if state.subtitle:
+        paint_subtitle(
+            painter, state.subtitle, target_width, target_height, subtitle_style or DEFAULT_SUBTITLE_STYLE
+        )
     painter.restore()
+
+
+def paint_subtitle(painter: QPainter, text: str, width: int, height: int, style: dict[str, Any]) -> QRectF:
+    """Incruste un sous-titre dans la bande inférieure (zone sûre), fond et contour lisibles sur mobile."""
+    painter.save()
+    painter.setOpacity(1.0)
+    font = QFont(str(style.get("font_family", "DejaVu Sans")))
+    # taille relative à la plus petite dimension : lisible en 16:9 comme en 9:16 (téléphone)
+    font.setPixelSize(max(8, int(round(min(width, height) * float(style.get("font_size_ratio", 0.045))))))
+    font.setBold(bool(style.get("bold", False)))
+    painter.setFont(font)
+    fm = QFontMetricsF(font)
+    max_w = width * float(style.get("max_width_ratio", 0.86))
+    flags = (
+        int(Qt.TextFlag.TextWordWrap) | int(Qt.AlignmentFlag.AlignHCenter) | int(Qt.AlignmentFlag.AlignTop)
+    )
+    bound = fm.boundingRect(QRectF(0, 0, max_w, height), flags, text)
+    pad = fm.height() * 0.3
+    bottom = height - height * float(style.get("bottom_margin_ratio", 0.08))
+    rect = QRectF(
+        (width - bound.width()) / 2 - pad,
+        bottom - bound.height() - pad,
+        bound.width() + 2 * pad,
+        bound.height() + 2 * pad,
+    )
+    bg = qcolor(style.get("background", "#000000A0"))
+    if bg.alpha() > 0:
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(bg))
+        painter.drawRoundedRect(rect, pad * 0.5, pad * 0.5)
+    text_rect = rect.adjusted(pad, pad, -pad, -pad)
+    outline_w = float(style.get("outline_width", 0.0) or 0.0)
+    if outline_w > 0:
+        path = QPainterPath()
+        y = text_rect.top() + fm.ascent()
+        for line in _wrap_lines(fm, text, text_rect.width()):
+            lw = fm.horizontalAdvance(line)
+            path.addText(QPointF(text_rect.center().x() - lw / 2, y), font, line)
+            y += fm.lineSpacing()
+        painter.setPen(
+            QPen(
+                qcolor(style.get("outline", "#000000")),
+                outline_w,
+                Qt.PenStyle.SolidLine,
+                Qt.PenCapStyle.RoundCap,
+                Qt.PenJoinStyle.RoundJoin,
+            )
+        )
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPath(path)
+    painter.setPen(QPen(qcolor(style.get("color", "#FFFFFF"))))
+    painter.drawText(text_rect, flags, text)
+    painter.restore()
+    return rect
+
+
+def _wrap_lines(fm: QFontMetricsF, text: str, max_width: float) -> list[str]:
+    """Découpe approximative en lignes selon la largeur (pour le contour ; Qt gère le rendu final)."""
+    out: list[str] = []
+    for paragraph in text.split("\n"):
+        words = paragraph.split(" ")
+        line = ""
+        for w in words:
+            cand = (line + " " + w).strip()
+            if line and fm.horizontalAdvance(cand) > max_width:
+                out.append(line)
+                line = w
+            else:
+                line = cand
+        out.append(line)
+    return out
 
 
 def paint_node(painter: QPainter, node: NodeState, assets: AssetResolver | None, cache: ImageCache) -> None:
@@ -391,13 +467,16 @@ def render_state_to_image(
     height: int,
     assets: AssetResolver | None = None,
     image_cache: ImageCache | None = None,
+    subtitle_style: dict[str, Any] | None = None,
 ) -> QImage:
     """Rastérise un état dans une ``QImage`` RGBA8888 (utilisé par l'export et les tests visuels)."""
     img = QImage(width, height, QImage.Format.Format_RGBA8888)
     img.fill(0)
     painter = QPainter(img)
     try:
-        paint_scene_state(painter, state, canvas, width, height, assets, image_cache)
+        paint_scene_state(
+            painter, state, canvas, width, height, assets, image_cache, subtitle_style=subtitle_style
+        )
     finally:
         painter.end()
     return img

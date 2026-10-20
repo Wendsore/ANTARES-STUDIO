@@ -17,6 +17,19 @@ Value = float | int | bool | str | list[float]
 
 EASINGS: tuple[str, ...] = ("step", "linear", "ease_in", "ease_out", "ease_in_out")
 
+# Style de sous-titres lisible sur téléphone : bande inférieure, fond semi-opaque, contour.
+DEFAULT_SUBTITLE_STYLE: dict[str, Any] = {
+    "font_family": "DejaVu Sans",
+    "font_size_ratio": 0.045,  # fraction de la hauteur du canevas
+    "color": "#FFFFFF",
+    "background": "#000000A0",
+    "outline": "#000000",
+    "outline_width": 2.0,
+    "bottom_margin_ratio": 0.08,
+    "max_width_ratio": 0.86,
+    "bold": False,
+}
+
 
 @dataclass
 class Canvas:
@@ -97,6 +110,39 @@ class Node:
 
 
 @dataclass
+class AudioClip:
+    """Référence non destructive à une ressource audio (narration, musique) placée sur la timeline."""
+
+    id: str
+    asset_id: str
+    name: str = ""
+    offset_frames: int = 0
+    gain: float = 1.0
+    in_seconds: float = 0.0
+    out_seconds: float | None = None  # None = jusqu'à la fin du fichier
+    fade_in_seconds: float = 0.0
+    fade_out_seconds: float = 0.0
+    muted: bool = False
+    duration_seconds: float = 0.0  # durée du fichier source, mesurée à l'import (informative)
+
+    @classmethod
+    def create(cls, asset_id: str, name: str = "", **kwargs: Any) -> AudioClip:
+        return cls(id=new_id("audio"), asset_id=asset_id, name=name, **kwargs)
+
+
+@dataclass
+class Subtitle:
+    id: str
+    start_frame: int
+    end_frame: int  # exclusif
+    text: str
+
+    @classmethod
+    def create(cls, start_frame: int, end_frame: int, text: str) -> Subtitle:
+        return cls(id=new_id("sub"), start_frame=start_frame, end_frame=end_frame, text=text)
+
+
+@dataclass
 class Scene:
     id: str
     name: str
@@ -104,6 +150,8 @@ class Scene:
     background: str = "#0B1020"
     nodes: list[Node] = field(default_factory=list)
     tracks: list[Track] = field(default_factory=list)
+    audio: list[AudioClip] = field(default_factory=list)
+    subtitles: list[Subtitle] = field(default_factory=list)
 
     @classmethod
     def create(cls, name: str, duration_frames: int = 300, **kwargs: Any) -> Scene:
@@ -133,6 +181,16 @@ class Scene:
 
     def tracks_for(self, target_id: str) -> list[Track]:
         return [t for t in self.tracks if t.target_id == target_id]
+
+    def subtitle_at(self, frame: int) -> Subtitle | None:
+        """Sous-titre actif à ``frame`` (le premier dans l'ordre de début en cas de chevauchement)."""
+        active = [s for s in self.subtitles if s.start_frame <= frame < s.end_frame]
+        if not active:
+            return None
+        return min(active, key=lambda s: (s.start_frame, s.id))
+
+    def audio_clip(self, clip_id: str) -> AudioClip | None:
+        return next((c for c in self.audio if c.id == clip_id), None)
 
 
 @dataclass
@@ -167,6 +225,15 @@ class Project:
         default_factory=lambda: {"representation": "schematic", "to_scale": False, "sources": []}
     )
     settings: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def subtitle_style(self) -> dict[str, Any]:
+        """Style des sous-titres (fusion des défauts et de ``settings['subtitle_style']``)."""
+        style = dict(DEFAULT_SUBTITLE_STYLE)
+        custom = self.settings.get("subtitle_style")
+        if isinstance(custom, dict):
+            style.update({k: v for k, v in custom.items() if k in DEFAULT_SUBTITLE_STYLE})
+        return style
 
     @classmethod
     def create(cls, title: str, canvas: Canvas | None = None) -> Project:

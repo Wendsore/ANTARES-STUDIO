@@ -72,6 +72,7 @@ class SceneState:
     frame: int
     background: str
     nodes: tuple[NodeState, ...]  # ordre de dessin (z_index croissant, puis ordre de déclaration)
+    subtitle: str | None = None  # texte du sous-titre actif, incrusté par le même painter que les objets
 
     def node(self, node_id: str) -> NodeState:
         for n in self.nodes:
@@ -207,7 +208,14 @@ def evaluate_scene(scene: Scene, frame: int) -> SceneState:
         )
     order_index = {n.id: i for i, n in enumerate(scene.nodes)}
     states.sort(key=lambda s: (s.z_index, order_index[s.id]))
-    return SceneState(scene_id=scene.id, frame=frame, background=scene.background, nodes=tuple(states))
+    sub = scene.subtitle_at(frame)
+    return SceneState(
+        scene_id=scene.id,
+        frame=frame,
+        background=scene.background,
+        nodes=tuple(states),
+        subtitle=sub.text if sub is not None else None,
+    )
 
 
 def evaluate(project: Project, scene_id: str, frame: int) -> SceneState:
