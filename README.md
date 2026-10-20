@@ -42,7 +42,16 @@ Les tests marqués `render` exigent FFmpeg et sont ignorés (visibles comme `ski
 
 ## État d'avancement
 
-Voir [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) (vérité sur les phases), [`CHANGELOG.md`](CHANGELOG.md) et les ADR dans [`docs/adr/`](docs/adr/).
+Voir [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) (vérité sur les phases), [`CHANGELOG.md`](CHANGELOG.md), les ADR dans [`docs/adr/`](docs/adr/) et le guide [`docs/user-guide/01-premiere-video.md`](docs/user-guide/01-premiere-video.md).
+
+## Lancer l'application
+
+```bash
+.venv/bin/antares-studio                 # Linux
+.venv\\Scripts\\antares-studio.exe        # Windows
+```
+
+![Éditeur ANTARES Studio](docs/images/editeur-phases-lune-2026-10-21.png)
 
 ## Licence
 
