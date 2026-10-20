@@ -2,7 +2,7 @@
 
 **Scientific Animation & Storytelling Studio** — logiciel de bureau de création de vidéos scientifiques 2D/3D, visuel, local et extensible, conçu notamment pour la vulgarisation de l'astronomie, de l'astrophysique, des mathématiques et de la physique en français auprès d'un public africain francophone.
 
-> **État au démarrage :** dépôt de cadrage et d'orchestration de développement. La présence de documents ne signifie PAS que l'application ou ses tests fonctionnels sont implémentés.
+> **État :** le cœur sans interface (modèle, timeline, persistance, export MP4) est implémenté et testé ; l'interface graphique est en cours (voir `docs/PROJECT_STATUS.md`). La présence de documents ne signifie PAS qu'une fonctionnalité est utilisable tant qu'elle n'est pas listée comme telle.
 
 ## Point d'entrée pour l'agent
 
@@ -25,7 +25,24 @@
 
 Dépôt officiel : https://github.com/Wendsore/ANTARES-STUDIO
 
-Au stade du cadrage, les contrôles vérifient la cohérence documentaire. Les tests d'interface, de rendu, de montage et de distribution devront être implémentés et exécutés au fur et à mesure du développement ; voir la stratégie de tests.
+## Installation développeur (Linux / Windows)
+
+Prérequis : Python 3.12 ou 3.13, FFmpeg (avec `ffprobe`) dans le `PATH` ou indiqué par la variable `ANTARES_FFMPEG`.
+
+```bash
+uv venv .venv --python 3.13          # ou : python -m venv .venv
+uv pip install --python .venv/bin/python -e '.[dev]'
+.venv/bin/python -m ruff check . && .venv/bin/python -m mypy src
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q
+```
+
+Sous Windows : `.venv\Scripts\python -m pip install -e .[dev]` puis `.venv\Scripts\python -m pytest -q`.
+
+Les tests marqués `render` exigent FFmpeg et sont ignorés (visibles comme `skipped`) s'il est absent.
+
+## État d'avancement
+
+Voir [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) (vérité sur les phases), [`CHANGELOG.md`](CHANGELOG.md) et les ADR dans [`docs/adr/`](docs/adr/).
 
 ## Licence
 

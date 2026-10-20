@@ -1,9 +1,10 @@
 """Validate the foundational documentation only (NOT the application)."""
+
 from __future__ import annotations
 
-from pathlib import Path
 import re
 import sys
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED = (
@@ -20,6 +21,7 @@ CRITICAL = {
     "docs/TEST_STRATEGY.md": ("MOD-01", "TIM-01", "REN-01", "E2E-01", "PKG-01"),
     "docs/RESEARCH_PROTOCOL.md": ("https://", "ADR", "licence"),
 }
+
 
 def validate() -> list[str]:
     errors: list[str] = []
@@ -40,6 +42,7 @@ def validate() -> list[str]:
             if "://" not in link and not (path.parent / link).exists():
                 errors.append(f"broken local markdown link: {filename} -> {link}")
     return errors
+
 
 if __name__ == "__main__":
     issues = validate()
