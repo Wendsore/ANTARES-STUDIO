@@ -213,12 +213,17 @@ def _check_free_space(folder: Path, plan: RenderPlan) -> None:
         )
 
 
-def _cleanup(tmp: Path) -> None:
-    try:
-        if tmp.exists():
-            tmp.unlink()
-    except OSError:
-        pass
+def _cleanup(tmp: Path, attempts: int = 20) -> None:
+    """Supprime le fichier temporaire ; sous Windows, FFmpeg peut libérer le descripteur avec retard."""
+    for i in range(attempts):
+        try:
+            if tmp.exists():
+                tmp.unlink()
+            return
+        except OSError:
+            if i == attempts - 1:
+                return
+            time.sleep(0.1)
 
 
 def _write_manifest(

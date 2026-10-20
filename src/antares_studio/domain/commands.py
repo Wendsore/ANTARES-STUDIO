@@ -98,6 +98,37 @@ class SetProperty:
 
 
 @dataclass
+class SetProperties:
+    """Modifie plusieurs propriétés d'un nœud en une seule étape d'annulation (glisser, poignées)."""
+
+    scene_id: str
+    node_id: str
+    values: dict[str, Any]
+    label: str = "Modifier l'objet"
+    _old: dict[str, Any] = field(default_factory=dict, repr=False)
+
+    def do(self, project: Project) -> None:
+        node = project.scene(self.scene_id).node(self.node_id)
+        if not self._old:
+            self._old = {p: copy.deepcopy(get_property(node, p)) for p in self.values}
+        for p, v in self.values.items():
+            set_property(node, p, copy.deepcopy(v))
+
+    def undo(self, project: Project) -> None:
+        node = project.scene(self.scene_id).node(self.node_id)
+        for p, v in self._old.items():
+            set_property(node, p, copy.deepcopy(v))
+
+    def merge_with(self, other: SetProperties) -> bool:
+        if (self.scene_id, self.node_id) != (other.scene_id, other.node_id):
+            return False
+        if set(other.values) - set(self.values):
+            return False
+        self.values.update(copy.deepcopy(other.values))
+        return True
+
+
+@dataclass
 class SetKeyframe:
     scene_id: str
     node_id: str
@@ -129,6 +160,19 @@ class SetKeyframe:
             track.set_keyframe(self._old.frame, self._old.value, self._old.easing)
         if self._track_created:
             scene.tracks = [t for t in scene.tracks if t is not track]
+
+    def merge_with(self, other: SetKeyframe) -> bool:
+        """Fusionne des poses successives de la même clé (glisser continu sur une propriété animée)."""
+        if (self.scene_id, self.node_id, self.path, self.frame) != (
+            other.scene_id,
+            other.node_id,
+            other.path,
+            other.frame,
+        ):
+            return False
+        self.value = copy.deepcopy(other.value)
+        self.easing = other.easing
+        return True
 
 
 @dataclass
@@ -319,9 +363,10 @@ class UndoStack:
         self.clean_index = 0  # position correspondant à l'état sauvegardé
 
     def push(self, cmd: Command, merge: bool = False) -> None:
-        if merge and self._undo and isinstance(cmd, SetProperty) and isinstance(self._undo[-1], SetProperty):
+        if merge and self._undo and not self._redo:
             last = self._undo[-1]
-            if last.merge_with(cmd):
+            merge_fn = getattr(last, "merge_with", None)
+            if type(last) is type(cmd) and merge_fn is not None and merge_fn(cmd):
                 cmd.do(self.project)
                 self._notify()
                 return

@@ -22,12 +22,7 @@ FFMPEG = ff.find_ffmpeg()
 needs_ffmpeg = pytest.mark.skipif(FFMPEG is None, reason="ffmpeg absent")
 
 
-@pytest.fixture(scope="module")
-def qapp():  # type: ignore[no-untyped-def]
-    from PySide6.QtGui import QGuiApplication
-
-    app = QGuiApplication.instance() or QGuiApplication([])
-    yield app
+# ``qapp`` est la fixture pytest-qt (QApplication) : nécessaire aux polices, partagée avec les tests UI.
 
 
 def _project(duration: int = 150):  # type: ignore[no-untyped-def]
