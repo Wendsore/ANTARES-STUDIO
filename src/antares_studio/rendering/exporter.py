@@ -26,6 +26,7 @@ from antares_studio.persistence.schema import project_to_dict
 from antares_studio.rendering import ffmpeg as ff
 from antares_studio.rendering.plan import AudioClipPlan, RenderPlan
 from antares_studio.rendering.qt_painter import AssetResolver, ImageCache, render_state_to_image
+from antares_studio.resources.licenses import credits_lines
 from antares_studio.timeline.evaluator import evaluate
 
 ProgressCallback = Callable[[int, int], None]
@@ -227,8 +228,11 @@ def export_video(
             for s in shifted
         ]
         srt_path.write_text(format_srt(rel, project.canvas.fps), encoding="utf-8")
+    credits = credits_lines(project)
+    # crédits et attributions à côté de la vidéo (master prompt §9.1) ; même base que la scène « Crédits »
+    output.with_suffix(".credits.txt").write_text("\n".join(credits) + "\n", encoding="utf-8")
     if write_manifest:
-        _write_manifest(manifest_path, project, plan, result, elapsed, ffmpeg, ffprobe)
+        _write_manifest(manifest_path, project, plan, result, elapsed, ffmpeg, ffprobe, credits)
     return RenderResult(output, manifest_path, result, elapsed, plan)
 
 
@@ -281,6 +285,7 @@ def _write_manifest(
     elapsed: float,
     ffmpeg: Path,
     ffprobe: Path,
+    credits: list[str] | None = None,
 ) -> None:
     scene = project.scene(plan.scene_id)
     scene_json = json.dumps(project_to_dict(project)["scenes"][project.scenes.index(scene)], sort_keys=True)
@@ -302,5 +307,7 @@ def _write_manifest(
             "elapsed_seconds": round(elapsed, 3),
         },
         "warnings": list(plan.warnings),
+        "credits": list(credits or []),
+        "scientific_metadata": project.scientific_metadata,
     }
     path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -8,6 +8,7 @@ from typing import Any
 
 from antares_studio import __version__
 from antares_studio.domain.model import Project
+from antares_studio.resources.licenses import provenance_warnings
 
 
 @dataclass(frozen=True)
@@ -121,6 +122,7 @@ def build_render_plan(
         raise ValueError("plage de rendu trop longue")
     if profile.width / profile.height != project.canvas.width / project.canvas.height:
         warnings.append("Le ratio du profil d'export diffère de celui du projet : l'image sera étirée.")
+    warnings.extend(provenance_warnings(project, scene_id))
     return RenderPlan(
         project_id=project.project_id,
         scene_id=scene_id,

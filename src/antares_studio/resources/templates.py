@@ -30,6 +30,68 @@ def build_empty(project: Project, scene: Scene) -> None:
     return None
 
 
+SCALE_WARNING_TEXT = "Schéma : distances et tailles non à l'échelle"
+
+
+def scale_warning_node(canvas: Canvas, text: str = SCALE_WARNING_TEXT) -> Node:
+    """Encadré d'avertissement d'échelle (SCI-07), placé au-dessus de la bande des sous-titres."""
+    k = _scale(canvas)
+    node = new_node(
+        "callout",
+        "Avertissement d'échelle",
+        canvas.width / 2,
+        canvas.height - 265 * k,  # sous l'image, au-dessus de la bande des sous-titres (20 % inférieurs)
+        text=text,
+        font_size=28 * k,
+        padding=14 * k,
+    )
+    return node
+
+
+def build_intro(project: Project, scene: Scene) -> None:
+    """Introduction : titre du projet et sous-titre, apparition progressive (phase 6, intro/outro)."""
+    c = project.canvas
+    k = _scale(c)
+    cx, cy = c.width / 2, c.height / 2
+    title = new_node("text", "Titre", cx, cy - 60 * k, text=project.title, font_size=72 * k, bold=True)
+    sub = new_node("text", "Sous-titre", cx, cy + 60 * k, text="Une animation scientifique", font_size=36 * k)
+    sub.style["fill"] = "#B0BEC5"
+    line = new_node("line", "Trait", cx - 300 * k, cy, end=[600 * k, 0.0])
+    for n in (title, sub, line):
+        scene.nodes.append(n)
+    d = max(1, scene.duration_frames // 4)
+    scene.tracks += apply_preset("appear", title, {"duration_frames": d})
+    scene.tracks += apply_preset("appear", sub, {"start_frame": d // 2, "duration_frames": d})
+    scene.tracks += apply_preset("appear", line, {"start_frame": d // 4, "duration_frames": d})
+
+
+def build_credits(project: Project, scene: Scene) -> None:
+    """Crédits : sources scientifiques, ressources tierces et logiciel, générés depuis le projet."""
+    from antares_studio.resources.licenses import credits_lines
+
+    c = project.canvas
+    k = _scale(c)
+    cx = c.width / 2
+    title = new_node("text", "Titre", cx, 120 * k, text="Crédits", font_size=64 * k, bold=True)
+    body = new_node(
+        "text",
+        "Crédits",
+        cx,
+        c.height / 2 + 20 * k,
+        text="\n".join(credits_lines(project)),
+        font_size=28 * k,
+        align="left",
+        max_width=c.width * 0.8,
+    )
+    body.style["fill"] = "#CFD8DC"
+    scene.background = "#05070F"
+    for n in (title, body):
+        scene.nodes.append(n)
+    d = max(1, scene.duration_frames // 5)
+    scene.tracks += apply_preset("appear", title, {"duration_frames": d})
+    scene.tracks += apply_preset("appear", body, {"start_frame": d // 2, "duration_frames": d})
+
+
 def build_moon_phases(project: Project, scene: Scene) -> None:
     """Soleil, Terre et Lune en orbite ; légende « non à l'échelle » (parcours P1)."""
     c = project.canvas
@@ -60,15 +122,7 @@ def build_moon_phases(project: Project, scene: Scene) -> None:
         font_size=56 * k,
         bold=True,
     )
-    legend = new_node(
-        "text",
-        "Légende",
-        cx,
-        c.height - 250 * k,  # au-dessus de la bande réservée aux sous-titres
-        text="Schéma : distances et tailles non à l'échelle",
-        font_size=30 * k,
-    )
-    legend.style["fill"] = "#B0BEC5"
+    legend = scale_warning_node(c)
     for n in (rays, sun, orbit, earth, moon, title, legend):
         scene.nodes.append(n)
     scene.tracks += apply_preset(
@@ -123,15 +177,7 @@ def build_scale_comparison(project: Project, scene: Scene) -> None:
         text="1 année-lumière ≈ 9,461 × 10¹² km ≈ 63 241 ua",
         font_size=34 * k,
     )
-    legend = new_node(
-        "text",
-        "Source",
-        cx,
-        c.height - 250 * k,  # au-dessus de la bande réservée aux sous-titres
-        text="Constantes : IAU 2012 (ua), CODATA (c)",
-        font_size=26 * k,
-    )
-    legend.style["fill"] = "#B0BEC5"
+    legend = scale_warning_node(c, "Schéma non à l'échelle — constantes : IAU 2012 (ua), CODATA (c)")
     for n in (title, bar, arrow, lab1, lab2, legend):
         scene.nodes.append(n)
     scene.tracks += apply_preset("appear", title, {"duration_frames": 20})
@@ -164,23 +210,17 @@ def build_orbit_vectors(project: Project, scene: Scene) -> None:
     k = _scale(c)
     cx, cy = c.width / 2, c.height / 2
     star = new_node("circle", "Étoile", cx, cy, radius=60 * k, style_fill="#FFC857")
-    path = new_node("orbit_path", "Trajectoire", cx, cy, radius=320 * k)
-    planet = new_node("circle", "Planète", cx + 320 * k, cy, radius=24 * k, style_fill="#2677B8")
+    path = new_node("orbit_path", "Trajectoire", cx, cy, radius=230 * k)
+    planet = new_node("circle", "Planète", cx + 230 * k, cy, radius=24 * k, style_fill="#2677B8")
     velocity = new_node("arrow", "Vitesse", 0.0, 0.0, end=[0.0, -140 * k], head_size=22 * k)
     velocity.parent_id = planet.id
     velocity.style["stroke"] = "#F2A93B"
     gravity = new_node("arrow", "Gravitation", 0.0, 0.0, end=[-120 * k, 0.0], head_size=22 * k)
     gravity.parent_id = planet.id
     gravity.style["stroke"] = "#EF5350"
-    legend = new_node(
-        "text",
-        "Légende",
-        cx,
-        c.height - 250 * k,  # au-dessus de la bande réservée aux sous-titres
-        text="Orbite circulaire schématique — v (orange) tangent, g (rouge) vers l'astre",
-        font_size=28 * k,
+    legend = scale_warning_node(
+        c, "Orbite circulaire schématique, non à l'échelle — v (orange) tangent, g (rouge) vers l'astre"
     )
-    legend.style["fill"] = "#B0BEC5"
     for n in (path, star, planet, velocity, gravity, legend):
         scene.nodes.append(n)
     scene.tracks += apply_preset(
@@ -189,7 +229,7 @@ def build_orbit_vectors(project: Project, scene: Scene) -> None:
         {
             "center_x": cx,
             "center_y": cy,
-            "radius": 320 * k,
+            "radius": 230 * k,
             "duration_frames": scene.duration_frames,
             "samples_per_turn": 72,
         },
@@ -202,9 +242,11 @@ def build_orbit_vectors(project: Project, scene: Scene) -> None:
 
 
 TEMPLATES: dict[str, tuple[str, TemplateBuilder]] = {
+    "intro": ("Introduction (titre et sous-titre)", build_intro),
     "moon_phases": ("Phases de la Lune (Soleil, Terre, Lune en orbite)", build_moon_phases),
     "scale_comparison": ("Comparaison d'échelles (année-lumière)", build_scale_comparison),
     "orbit_vectors": ("Orbite et vecteurs (vitesse, gravitation)", build_orbit_vectors),
+    "credits": ("Crédits (sources, ressources, logiciel)", build_credits),
 }
 
 
