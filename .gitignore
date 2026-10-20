@@ -1,0 +1,38 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+# local secrets and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+# IDE
+.vscode/
+.idea/
+# generated media and temporary caches
+*.mp4
+*.mov
+*.mkv
+*.wav
+*.flac
+*.blend1
+*.blend2
+renders/
+cache/
+.temp/
+temp/
+logs/
+# OS
+.DS_Store
+Thumbs.db
