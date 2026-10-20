@@ -221,7 +221,16 @@ class CanvasWidget(QWidget):
             painter.translate(self.offset)
             w = max(1, int(round(c.width * self.zoom)))
             h = max(1, int(round(c.height * self.zoom)))
-            paint_scene_state(painter, state, c, w, h, self.document.resolve_asset, self._image_cache)
+            paint_scene_state(
+                painter,
+                state,
+                c,
+                w,
+                h,
+                self.document.resolve_asset,
+                self._image_cache,
+                subtitle_style=self.document.project.subtitle_style,
+            )
             painter.restore()
         if self.show_grid:
             self._paint_grid(painter, canvas_rect)

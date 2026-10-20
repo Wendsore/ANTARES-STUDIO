@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
-from typing import Any
 
 from PySide6.QtCore import QObject, Qt, QThread, Signal
 from PySide6.QtWidgets import (
@@ -25,8 +24,14 @@ from PySide6.QtWidgets import (
 from antares_studio.app.document import ProjectDocument
 from antares_studio.app.settings import AppSettings
 from antares_studio.rendering import ffmpeg as ff
-from antares_studio.rendering.exporter import RenderCancelledError, RenderError, RenderResult, export_video
-from antares_studio.rendering.plan import PROFILES, AudioClipPlan, RenderPlan, build_render_plan
+from antares_studio.rendering.exporter import (
+    RenderCancelledError,
+    RenderError,
+    RenderResult,
+    audio_plans_for_scene,
+    export_video,
+)
+from antares_studio.rendering.plan import PROFILES, RenderPlan, build_render_plan
 
 
 class _Worker(QObject):
@@ -151,7 +156,11 @@ class ExportDialog(QDialog):
             return
         pid = str(self.profile.currentData())
         self.settings.set_last_export_profile(pid)
-        audio = audio_clip_plans(self.document)
+        try:
+            audio = audio_plans_for_scene(self.document.project, scene.id, self.document.resolve_asset)
+        except RenderError as exc:
+            QMessageBox.warning(self, "Export", str(exc))
+            return
         try:
             plan = build_render_plan(self.document.project, scene.id, pid, str(out), audio=audio)
         except ValueError as exc:
@@ -233,38 +242,3 @@ class ExportDialog(QDialog):
             self._worker.cancel.set()
             return
         super().keyPressEvent(event)
-
-
-def scene_audio_clips(document: ProjectDocument) -> list[dict[str, Any]]:
-    """Clips audio de la scène courante, stockés dans ``project.settings["audio"][scene_id]``."""
-    scene = document.scene
-    if scene is None:
-        return []
-    audio = document.project.settings.get("audio", {})
-    clips = audio.get(scene.id, []) if isinstance(audio, dict) else []
-    return [c for c in clips if isinstance(c, dict)]
-
-
-def _num(v: Any, default: float) -> float:
-    return float(v) if isinstance(v, int | float) and not isinstance(v, bool) else default
-
-
-def audio_clip_plans(document: ProjectDocument) -> tuple[AudioClipPlan, ...]:
-    plans: list[AudioClipPlan] = []
-    for clip in scene_audio_clips(document):
-        path = document.resolve_asset(str(clip.get("asset_id", "")))
-        if path is None:
-            continue
-        out_v = clip.get("out_seconds")
-        plans.append(
-            AudioClipPlan(
-                path=str(path),
-                offset_frames=int(_num(clip.get("offset_frames"), 0)),
-                gain=_num(clip.get("gain"), 1.0),
-                in_seconds=_num(clip.get("in_seconds"), 0.0),
-                out_seconds=_num(out_v, 0.0) if isinstance(out_v, int | float) else None,
-                fade_in_seconds=_num(clip.get("fade_in_seconds"), 0.0),
-                fade_out_seconds=_num(clip.get("fade_out_seconds"), 0.0),
-            )
-        )
-    return tuple(plans)

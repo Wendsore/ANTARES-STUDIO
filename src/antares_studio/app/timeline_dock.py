@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Any
 
 from PySide6.QtCore import QElapsedTimer, QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import (
@@ -30,8 +31,9 @@ from PySide6.QtWidgets import (
 )
 
 from antares_studio.app import theme
+from antares_studio.app.audio_player import ScenePlayback
 from antares_studio.app.document import ProjectDocument
-from antares_studio.domain.commands import MoveKeyframe, RemoveKeyframe
+from antares_studio.domain.commands import MoveKeyframe, RemoveKeyframe, SetAudioClipAttr
 from antares_studio.domain.kinds import property_label
 from antares_studio.domain.model import Track
 
@@ -46,6 +48,8 @@ class _Row:
     node_name: str
     track: Track | None  # None = ligne d'en-tête de l'objet
     label: str
+    kind: str = "node"  # node | audio | subtitles
+    clip_id: str | None = None
 
 
 class TimelineView(QWidget):
@@ -64,7 +68,10 @@ class TimelineView(QWidget):
         self._drag_key: tuple[str, str, int] | None = None
         self._drag_target: int | None = None
         self._scrubbing = False
+        self._drag_clip: tuple[str, int, float] | None = None  # (clip_id, offset de départ, x souris)
+        self._drag_clip_target: int | None = None
         self.show_all_objects = True
+        self.waveforms: dict[str, tuple[Any, float]] = {}  # asset_id -> (pics 50 Hz, durée)
         self.setMinimumHeight(120)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -82,6 +89,12 @@ class TimelineView(QWidget):
             self.update()
             return
         sel = set(self.document.selection)
+        if scene.subtitles:
+            self.rows.append(_Row("", "", None, "Sous-titres", kind="subtitles"))
+        for clip in scene.audio:
+            self.rows.append(
+                _Row("", clip.name, None, "♪ " + (clip.name or "audio"), kind="audio", clip_id=clip.id)
+            )
         for node in scene.nodes:
             tracks = scene.tracks_for(node.id)
             if not self.show_all_objects and node.id not in sel:
@@ -92,6 +105,75 @@ class TimelineView(QWidget):
             for t in sorted(tracks, key=lambda t: t.property):
                 self.rows.append(_Row(node.id, node.name, t, "   " + property_label(node.kind, t.property)))
         self.update()
+
+    def _clip_span_x(self, clip: Any) -> tuple[float, float]:
+        fps = float(self.document.project.canvas.fps)
+        offset = clip.offset_frames
+        if (
+            self._drag_clip is not None
+            and self._drag_clip[0] == clip.id
+            and self._drag_clip_target is not None
+        ):
+            offset = self._drag_clip_target
+        length_s = (clip.out_seconds - clip.in_seconds) if clip.out_seconds is not None else None
+        if length_s is None:
+            length_s = max(0.0, clip.duration_seconds - clip.in_seconds)
+            wf = self.waveforms.get(clip.asset_id)
+            if wf is not None and length_s <= 0:
+                length_s = max(0.0, wf[1] - clip.in_seconds)
+        x0 = self.frame_to_x(offset)
+        x1 = self.frame_to_x(offset + length_s * fps)
+        return x0, x1
+
+    def _paint_audio_row(self, p: QPainter, clip: Any, y: float) -> None:
+        x0, x1 = self._clip_span_x(clip)
+        if x1 - x0 < 2:
+            x1 = x0 + 2
+        rect = QRectF(max(LABEL_W, x0), y + 2, min(self.width(), x1) - max(LABEL_W, x0), ROW_H - 4)
+        if rect.width() <= 0:
+            return
+        color = theme.SELECTION.darker(140) if not clip.muted else theme.TEXT_MUTED.darker(160)
+        p.fillRect(rect, QBrush(color))
+        wf = self.waveforms.get(clip.asset_id)
+        if wf is not None and len(wf[0]):
+            pk, _dur = wf
+            fps = float(self.document.project.canvas.fps)
+            p.setPen(QPen(theme.TEXT, 1))
+            mid = y + ROW_H / 2
+            half = (ROW_H - 6) / 2
+            x = int(rect.left())
+            while x < rect.right():
+                t = (
+                    self.x_to_frame(x)
+                    - (
+                        self._drag_clip_target
+                        if self._drag_clip
+                        and self._drag_clip[0] == clip.id
+                        and self._drag_clip_target is not None
+                        else clip.offset_frames
+                    )
+                ) / fps + clip.in_seconds
+                i = int(t * 50)
+                if 0 <= i < len(pk):
+                    a = float(pk[i]) * clip.gain
+                    a = min(1.0, a) * half
+                    p.drawLine(QPointF(x, mid - a), QPointF(x, mid + a))
+                x += 1
+
+    def _paint_subtitles_row(self, p: QPainter, y: float) -> None:
+        scene = self.document.scene
+        if scene is None:
+            return
+        for sub in scene.subtitles:
+            x0, x1 = self.frame_to_x(sub.start_frame), self.frame_to_x(sub.end_frame)
+            if x1 < LABEL_W or x0 > self.width():
+                continue
+            rect = QRectF(max(LABEL_W, x0), y + 3, min(self.width(), x1) - max(LABEL_W, x0), ROW_H - 6)
+            p.fillRect(rect, QBrush(theme.KEYFRAME.darker(170)))
+            p.setPen(theme.TEXT)
+            p.drawText(
+                rect.adjusted(3, 0, -3, 0), int(Qt.AlignmentFlag.AlignVCenter), sub.text.split("\n")[0]
+            )
 
     # --- géométrie ------------------------------------------------------------
     def frame_to_x(self, frame: int | float) -> float:
@@ -130,6 +212,12 @@ class TimelineView(QWidget):
                 p.setPen(theme.TEXT_MUTED)
                 p.setFont(font)
             p.drawText(QRectF(6, y, LABEL_W - 10, ROW_H), Qt.AlignmentFlag.AlignVCenter, row.label)
+            if row.kind == "audio" and row.clip_id is not None:
+                clip = scene.audio_clip(row.clip_id)
+                if clip is not None:
+                    self._paint_audio_row(p, clip, y)
+            elif row.kind == "subtitles":
+                self._paint_subtitles_row(p, y)
             if row.track is not None:
                 kfs = row.track.sorted_keyframes()
                 if len(kfs) >= 2:
@@ -232,8 +320,20 @@ class TimelineView(QWidget):
             self.update()
             return
         row_idx = int((pos.y() - RULER_H) // ROW_H) + self.scroll_row
-        if pos.y() >= RULER_H and 0 <= row_idx < len(self.rows) and pos.x() < LABEL_W:
-            self.document.set_selection([self.rows[row_idx].node_id])
+        if pos.y() >= RULER_H and 0 <= row_idx < len(self.rows):
+            row = self.rows[row_idx]
+            if row.kind == "audio" and row.clip_id is not None and pos.x() >= LABEL_W:
+                scene = self.document.scene
+                clip = scene.audio_clip(row.clip_id) if scene else None
+                if clip is not None:
+                    x0, x1 = self._clip_span_x(clip)
+                    if x0 - 4 <= pos.x() <= x1 + 4:
+                        self._drag_clip = (clip.id, clip.offset_frames, pos.x())
+                        self._drag_clip_target = clip.offset_frames
+                        self.update()
+                        return
+            if pos.x() < LABEL_W and row.kind == "node":
+                self.document.set_selection([row.node_id])
         self.selected_key = None
         if pos.x() >= LABEL_W:
             self._scrubbing = True
@@ -242,13 +342,31 @@ class TimelineView(QWidget):
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         pos = event.position()
-        if self._drag_key is not None:
+        if self._drag_clip is not None:
+            _cid, start_offset, x_start = self._drag_clip
+            delta = (pos.x() - x_start) / self.px_per_frame
+            self._drag_clip_target = max(0, int(round(start_offset + delta)))
+            self.update()
+        elif self._drag_key is not None:
             self._drag_target = max(0, self.x_to_frame(pos.x()))
             self.update()
         elif self._scrubbing:
             self.document.set_frame(self.x_to_frame(pos.x()))
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if self._drag_clip is not None:
+            cid, start_offset, _x = self._drag_clip
+            scene = self.document.scene
+            if (
+                scene is not None
+                and self._drag_clip_target is not None
+                and self._drag_clip_target != start_offset
+            ):
+                self.document.push(SetAudioClipAttr(scene.id, cid, "offset_frames", self._drag_clip_target))
+            self._drag_clip = None
+            self._drag_clip_target = None
+            self.update()
+            return
         if self._drag_key is not None and self._drag_target is not None:
             node_id, prop, frame = self._drag_key
             scene = self.document.scene
@@ -302,6 +420,8 @@ class TimelineDock(QWidget):
         self._clock = QElapsedTimer()
         self._play_start_frame = 0
         self.playing = False
+        self.playback = ScenePlayback(self)
+        self.ffmpeg_path: str = ""
 
         bar = QHBoxLayout()
         self.play_btn = QPushButton("▶ Lecture")
@@ -350,9 +470,35 @@ class TimelineDock(QWidget):
         layout.addLayout(body, 1)
         document.frameChanged.connect(self._on_frame)
         document.changed.connect(self._update_scroll)
+        document.changed.connect(self.load_waveforms)
         document.sceneChanged.connect(lambda _s: self._update_scroll())
+        document.sceneChanged.connect(lambda _s: self.load_waveforms())
         self._on_frame(document.frame)
         self._update_scroll()
+
+    def load_waveforms(self) -> None:
+        """Charge (avec cache projet) les formes d'onde des clips de la scène ; silencieux sans FFmpeg."""
+        scene = self.document.scene
+        if scene is None or not scene.audio:
+            return
+        from antares_studio.audio.waveform import waveform_for
+        from antares_studio.rendering import ffmpeg as ff
+
+        ffmpeg = ff.find_ffmpeg(self.ffmpeg_path or None)
+        if ffmpeg is None:
+            return
+        cache_dir = self.document.paths.cache if self.document.paths else None
+        for clip in scene.audio:
+            if clip.asset_id in self.view.waveforms:
+                continue
+            path = self.document.resolve_asset(clip.asset_id)
+            if path is None:
+                continue
+            try:
+                self.view.waveforms[clip.asset_id] = waveform_for(ffmpeg, path, cache_dir)
+            except (ff.FFmpegError, OSError):
+                continue
+        self.view.update()
 
     def _set_auto_key(self, on: bool) -> None:
         self.document.auto_key = on
@@ -398,6 +544,9 @@ class TimelineDock(QWidget):
             self.document.set_frame(0)
         self.playing = True
         self._play_start_frame = self.document.frame
+        fps = float(self.document.project.canvas.fps)
+        self.playback.prepare(list(scene.audio), self.document.resolve_asset, fps)
+        self.playback.sync(self.document.frame)
         self._clock.restart()
         self._timer.start(15)
         self.play_btn.setText("⏸ Pause")
@@ -405,6 +554,7 @@ class TimelineDock(QWidget):
     def pause(self) -> None:
         self.playing = False
         self._timer.stop()
+        self.playback.stop()
         self.play_btn.setText("▶ Lecture")
 
     def go_start(self) -> None:
@@ -427,12 +577,14 @@ class TimelineDock(QWidget):
         frame = self._play_start_frame + int(math.floor(elapsed * fps))
         if frame >= scene.duration_frames:
             if self.loop.isChecked():
-                frame = frame % scene.duration_frames
                 self._play_start_frame = 0
                 self._clock.restart()
                 frame = 0
+                self.playback.stop()
+                self.playback.prepare(list(scene.audio), self.document.resolve_asset, fps)
             else:
                 self.document.set_frame(scene.duration_frames - 1)
                 self.pause()
                 return
         self.document.set_frame(frame)
+        self.playback.sync(frame)
