@@ -6,7 +6,7 @@ Dernière mise à jour : 2026-10-21 (éditeur complet, phases 1 à 4 réalisées
 
 - **Phase active : 5 — bibliothèque, provenance, parcours P1 complet ; puis 6 — narration et sous-titres.**
 - Phases 0 à 4 : `DONE` sur Linux (gates prouvés par tests automatisés, voir journal). Validation Windows : CI `windows-latest` verte pour le cœur (47 tests, FFmpeg 9.0.2) sur PR #2 ; tests UI Windows à lire sur la PR suivante.
-- **Logiciel utilisable : oui, en version de développement** (`antares-studio`) : nouveau projet avec modèles, édition visuelle (sélection, glisser, poignées, inspecteur, calques), 6 presets d'animation et images clés, timeline avec lecture, enregistrement/réouverture/autosave/récupération, export MP4 vérifié avec progression et annulation. Capture : `docs/images/editeur-phases-lune-2026-10-21.png`.
+- **MVP candidat : non** (parcours P1 avec narration à prouver sur Windows). **Logiciel utilisable : oui, en version de développement** (`antares-studio`) : nouveau projet avec modèles, édition visuelle (sélection, glisser, poignées, inspecteur, calques), 6 presets d'animation et images clés, timeline avec lecture, enregistrement/réouverture/autosave/récupération, export MP4 vérifié avec progression et annulation. Capture : `docs/images/editeur-phases-lune-2026-10-21.png`.
 - **Non disponible :** voix off/sous-titres depuis l'interface, recherche d'icônes/packs, équations, 3D, installateur Windows.
 - **Tests exécutés :** 66 tests pytest verts sur Linux le 2026-10-21 (37 unitaires, 7 intégration/export, 19 interface, 3 documentaires), ruff et mypy strict propres.
 - **Moteur retenu :** rendu Qt natif + FFmpeg (ADR-0001). **Licence du code :** non choisie (propriétaire).
