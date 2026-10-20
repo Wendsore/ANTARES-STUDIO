@@ -1,11 +1,13 @@
 """Documentation smoke tests only, not application feature tests."""
-from pathlib import Path
+
 import sys
 import unittest
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from validate_docs import validate  # noqa: E402
+
 
 class DocumentationTests(unittest.TestCase):
     def test_foundational_documents_are_coherent(self) -> None:
@@ -19,6 +21,7 @@ class DocumentationTests(unittest.TestCase):
     def test_status_does_not_claim_app_is_done(self) -> None:
         content = (ROOT / "docs/PROJECT_STATUS.md").read_text(encoding="utf-8")
         self.assertIn("Logiciel développé : non", content)
+
 
 if __name__ == "__main__":
     unittest.main()
