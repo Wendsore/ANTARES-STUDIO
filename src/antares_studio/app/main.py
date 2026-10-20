@@ -1,4 +1,4 @@
-"""Point d'entrée de l'application : ``antares-studio [projet.antares]``."""
+"""Point d'entrée : ``antares-studio [projet.antares]``, ``--version``, ``--selftest``, ``--export``."""
 
 from __future__ import annotations
 
@@ -24,6 +24,11 @@ def create_app(argv: list[str] | None = None) -> QApplication:
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv if argv is None else argv)
+    from antares_studio.app.cli import run_cli
+
+    code = run_cli(argv[1:])
+    if code is not None:
+        return code
     app = create_app(argv)
     from antares_studio.app.main_window import MainWindow
 

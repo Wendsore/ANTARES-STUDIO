@@ -2,6 +2,13 @@
 
 Toutes les évolutions **effectives** (pas les intentions). Format : date, lot, changements observables.
 
+## [0.1.0.dev0] — 2026-10-21 — Phase 9 (partiel) : ligne de commande et paquet PyInstaller
+
+- `antares-studio --version`, `--selftest` (contrôle d'installation sans interface) et `--export PROJET SORTIE.mp4 [--profile] [--scene]`.
+- FFmpeg livré dans `bin/` à côté de l'exécutable empaqueté est détecté automatiquement.
+- `packaging/` : spec PyInstaller (mode dossier, fenêtré, sans UPX), `build.py --check`, notices de licences tierces ; job CI Windows qui construit le `.exe`, l'autoteste, exporte un projet modèle et publie l'archive.
+- `scripts/bench_scrub.py` : mesure de latence de scrubbing (100 objets).
+
 ## [0.1.0.dev0] — 2026-10-21 — Phase 5 : provenance, crédits, avertissement d'échelle, parcours P1
 
 - Fiche de provenance (auteur, source, licence parmi une liste, attribution, redistribution) proposée après chaque import d'image ou d'audio, modifiable depuis l'onglet **Ressources** de la bibliothèque ou `Fichier > Inventaire des licences et crédits…` (statut par ressource, usages, crédits générés, copie/enregistrement).

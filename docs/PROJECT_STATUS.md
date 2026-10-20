@@ -23,7 +23,7 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q
 
 ## Prochaines actions ordonnées
 
-1. Phase 9 (partiel) : packaging Windows (PyInstaller, FFmpeg et licences incluses), test d'installation propre, exécution du parcours P1 sur Windows 11 par le propriétaire (R-005) ; latence de scrubbing mesurée sur un projet de 100 objets.
+1. Phase 9 : lire le job `windows-package` de la PR #6 (artefact `ANTARES-Studio-windows-x64.zip`), installation propre et parcours P1 sur Windows 11 par le propriétaire (R-005) ; installateur et signature si identité ; latence de scrubbing mesurée (p50 55 ms à 100 objets, `docs/session-logs/2026-10-21-phase9-packaging.md`).
 2. Gate 6 complet : vidéo ≥ 2 min avec narration réelle et revue mobile 16:9 (nécessite une voix off réelle du porteur).
 3. Phase 7/8 : équations (SVG), simulation Kepler/N-corps, Blender optionnel.
 4. Décisions propriétaire : licence du produit et build FFmpeg (R-002), fusion des PR #2 → #5 (R-006).
@@ -37,6 +37,7 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q
 | 2026-10-21 | Claude Code, Debian 13 (`ki`) | Phases 1–4 : éditeur PySide6 complet (docks, canvas, inspecteur, timeline, export) | 66 pytest PASS (19 UI hors écran), ruff, mypy | DONE (Linux) ; Windows via CI | PR #3 |
 | 2026-10-21 | Claude Code, Debian 13 (`ki`) | Phase 6 : clips audio (mixage FFmpeg, forme d'onde), sous-titres SRT/VTT incrustés, panneau Narration, pistes timeline | 85 pytest PASS (AUD-01…09, 4 UI narration), ruff, mypy | DONE (Linux) sauf crédits ; Windows via CI | PR #4 |
 | 2026-10-21 | Claude Code, Debian 13 (`ki`) | Phase 5 : provenance des ressources, inventaire des licences, crédits (fichier + scène), encadré d'avertissement d'échelle, métadonnées/sources, favoris, parcours P1 complet | 97 pytest PASS (AST-03/05/06, SCI-07/08, Gate 5 P1 1080p/30), ruff, mypy | DONE (Linux) ; Windows via CI | PR #5 |
+| 2026-10-21 | Claude Code, Debian 13 (`ki`) | Phase 9 (partiel) : CLI (--version/--selftest/--export), spec PyInstaller + build, notices tierces, job CI windows-package, banc de scrubbing | bundle Linux autotesté (248 Mo), 4 tests CLI PASS ; suite complète NON RELANCÉE (limite de session) | EN COURS ; Windows via CI | PR #6 |
 
 ## Suivi des problèmes
 

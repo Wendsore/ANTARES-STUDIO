@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -35,6 +36,10 @@ def _candidates(name: str, env: str, configured: str | None) -> list[Path]:
         out.append(Path(configured))
     if os.environ.get(env):
         out.append(Path(os.environ[env]))
+    exe = name + (".exe" if sys.platform.startswith("win") else "")
+    # binaire livré avec l'application empaquetée (PyInstaller : dossier de l'exécutable / bin)
+    if getattr(sys, "frozen", False):
+        out.append(Path(sys.executable).resolve().parent / "bin" / exe)
     found = shutil.which(name)
     if found:
         out.append(Path(found))

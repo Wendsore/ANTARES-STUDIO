@@ -40,6 +40,8 @@ Sous Windows : `.venv\Scripts\python -m pip install -e .[dev]` puis `.venv\Scrip
 
 Les tests marqués `render` exigent FFmpeg et sont ignorés (visibles comme `skipped`) s'il est absent.
 
+Paquet Windows (phase 9, en cours) : `pip install pyinstaller==6.22.3` puis `python packaging/build.py --check` ; la CI publie l'archive `ANTARES-Studio-windows-x64.zip`. Contrôle d'installation : `"ANTARES Studio.exe" --selftest`.
+
 ## État d'avancement
 
 Voir [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) (vérité sur les phases), [`CHANGELOG.md`](CHANGELOG.md), les ADR dans [`docs/adr/`](docs/adr/) et le guide [`docs/user-guide/01-premiere-video.md`](docs/user-guide/01-premiere-video.md).

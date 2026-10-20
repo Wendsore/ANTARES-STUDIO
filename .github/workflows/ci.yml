@@ -70,3 +70,40 @@ jobs:
         with:
           name: pytest-windows
           path: pytest-windows.xml
+
+  windows-package:
+    name: Windows — paquet PyInstaller et autotest du binaire
+    runs-on: windows-latest
+    needs: windows
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: FFmpeg (choco)
+        shell: pwsh
+        run: choco install ffmpeg -y --no-progress
+      - name: Installation (sans extras de test)
+        run: |
+          python -m pip install .
+          python -m pip install "pyinstaller==6.22.3"
+      - name: Construction du dossier distribuable + autotest du binaire
+        run: python packaging/build.py --check
+      - name: Export sans interface depuis le binaire (projet modèle)
+        shell: pwsh
+        run: |
+          python -c "from antares_studio.app.main import create_app; create_app([]); from antares_studio.domain.model import Canvas; from antares_studio.persistence.store import ProjectStore; from antares_studio.resources.templates import create_project; ProjectStore().create('smoke', create_project('Smoke', Canvas(1280, 720, 30, 1), 'moon_phases', 1))"
+          & "dist/ANTARES Studio/ANTARES Studio.exe" --export smoke.antares smoke.mp4 --profile draft_720p
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-Item smoke.mp4, smoke.credits.txt
+      - name: Archive du dossier distribuable
+        shell: pwsh
+        run: Compress-Archive -Path "dist/ANTARES Studio" -DestinationPath "ANTARES-Studio-windows-x64.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ANTARES-Studio-windows-x64
+          path: ANTARES-Studio-windows-x64.zip
+          retention-days: 14
