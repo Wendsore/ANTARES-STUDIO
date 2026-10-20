@@ -42,12 +42,21 @@ Lecture : **Espace** ; image par image : **,** et **.** ; Début/Fin : **Début*
 
 `Fichier > Enregistrer` (Ctrl+S) crée un dossier `Phases de la Lune.antares/` contenant `project.json`, `assets/`, `audio/`, `autosaves/`, `renders/`. Le dossier se déplace ou se copie librement (chemins relatifs). Une sauvegarde automatique est faite toutes les 60 s dans `autosaves/` ; en cas de fichier illisible, ANTARES propose la dernière sauvegarde valide sans jamais écraser l'original.
 
-## 6. Exporter la vidéo
+## 6. Ajouter la narration et les sous-titres
 
-`Fichier > Exporter la vidéo…` (Ctrl+E) : choisissez **Final 1080p** (ou **Brouillon 720p** pour vérifier rapidement), le fichier de sortie, puis « Exporter ». La progression s'affiche ; « Annuler l'export » arrête proprement sans laisser de fichier partiel. À la fin, le fichier est vérifié (résolution, cadence, nombre d'images) et un `*.manifest.json` décrit le rendu.
+Ouvrez l'onglet **Narration** (à côté de la Timeline, ou `Affichage > Narration`).
+
+- **Audio** : `Narration > Importer un fichier audio…` (WAV, MP3, OGG, FLAC, M4A). Le fichier est copié dans `audio/` du projet et placé à la tête de lecture ; une piste « ♪ nom » apparaît dans la Timeline avec sa forme d'onde. Faites glisser le clip pour le décaler, ou réglez dans le tableau le début (s), le gain, les fondus d'entrée/sortie et « Muet ». Il n'y a pas d'enregistrement micro : enregistrez la voix avec un autre outil (par exemple Audacity) puis importez le fichier.
+- **Sous-titres** : placez la tête de lecture, `Narration > Ajouter un sous-titre à la tête de lecture` (Ctrl+Maj+T), puis modifiez début, fin et texte dans le tableau. Le sous-titre s'affiche sur le canevas dans la bande inférieure, exactement comme à l'export. `Importer des sous-titres…` accepte SRT et VTT (UTF-8) ; `Exporter des sous-titres…` écrit un SRT ou VTT. Les chevauchements, les durées trop courtes et les lignes trop longues sont signalés sous le tableau.
+
+Le son de l'éditeur est joué « au mieux » (il peut rester silencieux selon la machine) ; l'export, lui, mixe toujours exactement les clips.
+
+## 7. Exporter la vidéo
+
+`Fichier > Exporter la vidéo…` (Ctrl+E) : choisissez **Final 1080p** (ou **Brouillon 720p** pour vérifier rapidement), le fichier de sortie, puis « Exporter ». La progression s'affiche ; « Annuler l'export » arrête proprement sans laisser de fichier partiel. À la fin, le fichier est vérifié (résolution, cadence, nombre d'images, piste audio) et un `*.manifest.json` décrit le rendu. Les sous-titres sont incrustés dans l'image et aussi écrits dans un fichier `.srt` à côté de la vidéo.
 
 FFmpeg doit être installé (`Aide > Diagnostics…` l'indique ; `Aide > Chemin de FFmpeg…` permet de le désigner manuellement).
 
 ## Ce qui n'est pas encore disponible
 
-Voix off et sous-titres depuis l'interface (en cours, phase 6), recherche d'icônes dans des packs, équations LaTeX, 3D. Voir `docs/PROJECT_STATUS.md`.
+Enregistrement micro, crédits automatiques (phase 5), recherche d'icônes dans des packs, équations LaTeX, 3D. Voir `docs/PROJECT_STATUS.md`.
