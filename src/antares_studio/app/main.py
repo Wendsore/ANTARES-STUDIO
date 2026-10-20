@@ -1,0 +1,41 @@
+"""Point d'entrée de l'application : ``antares-studio [projet.antares]``."""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+from PySide6.QtCore import QLocale
+from PySide6.QtWidgets import QApplication
+
+from antares_studio import __version__
+
+
+def create_app(argv: list[str] | None = None) -> QApplication:
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication(argv if argv is not None else sys.argv)
+    app.setApplicationName("ANTARES Studio")
+    app.setOrganizationName("Wendsore")
+    app.setApplicationVersion(__version__)
+    QLocale.setDefault(QLocale(QLocale.Language.French, QLocale.Country.France))
+    return app  # type: ignore[return-value]
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv if argv is None else argv)
+    app = create_app(argv)
+    from antares_studio.app.main_window import MainWindow
+
+    window = MainWindow()
+    window.show()
+    for arg in argv[1:]:
+        p = Path(arg)
+        if p.exists():
+            window.open_project_path(p)
+            break
+    return app.exec()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

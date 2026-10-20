@@ -92,7 +92,8 @@ def paint_scene_state(
             continue
         painter.save()
         a, b, c, d, tx, ty = node.world
-        painter.setWorldTransform(QTransform(a, b, c, d, tx, ty) * base, False)
+        # combine=True : la transformation s'ajoute à celle du painter (décalage/zoom de l'éditeur)
+        painter.setWorldTransform(QTransform(a, b, c, d, tx, ty) * base, True)
         painter.setOpacity(node.world_opacity)
         paint_node(painter, node, assets, cache)
         painter.restore()
