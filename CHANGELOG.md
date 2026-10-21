@@ -2,6 +2,11 @@
 
 Toutes les évolutions **effectives** (pas les intentions). Format : date, lot, changements observables.
 
+## [0.1.0.dev0] — 2026-10-21 — Phase 7 (minimal) : planète 3D par Blender facultatif
+
+- `Objet > Planète 3D (Blender, facultatif)…` : si Blender est installé, rend une planète procédurale en rotation (Cycles CPU, fond transparent) en séquence PNG dans le projet et l'insère comme objet **Séquence d'images** animé sur la durée de la scène ; progression, annulation, messages explicites. Sans Blender : diagnostic et aucune fonction 2D affectée.
+- Nouvel objet **Séquence d'images (rendu 3D)** (dossier de ressources, index d'image animable, boucle).
+
 ## [0.1.0.dev0] — 2026-10-21 — Export de la vidéo complète
 
 - Dialogue d'export : « Toutes les scènes à la suite (vidéo complète) » ; CLI `--export … --all-scenes`. Chaque scène est rendue puis enchaînée sans ré-encodage ; piste audio silencieuse ajoutée aux scènes muettes ; sous-titres fusionnés (`.srt`), crédits (`.credits.txt`) et manifest listant les scènes.

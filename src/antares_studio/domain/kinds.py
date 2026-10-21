@@ -206,6 +206,18 @@ KINDS: dict[str, KindSpec] = {
                 ParamSpec("axis_color", "color", "#CFD8DC", animatable=True, label="Axes et texte"),
             ),
         ),
+        KindSpec(
+            "image_sequence",
+            "Séquence d'images (rendu 3D)",
+            params=(
+                ParamSpec("sequence_asset_id", "asset", "", False, "Séquence (dossier)"),
+                ParamSpec("frame_count", "int", 1, False, "Nombre d'images", min=1),
+                ParamSpec("frame_index", "float", 0.0, True, "Image affichée (0 = première)", min=0),
+                ParamSpec("width", "float", 400.0, True, "Largeur", min=0),
+                ParamSpec("height", "float", 0.0, True, "Hauteur (0 = proportionnelle)", min=0),
+            ),
+            style=(ParamSpec("tint", "color", "#FFFFFF00", animatable=True, label="Teinte"),),
+        ),
         KindSpec("group", "Groupe", container=True),
         KindSpec(
             "orbit_path",
