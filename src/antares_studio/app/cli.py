@@ -34,6 +34,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--profile", default="final_1080p", help="profil d'export (défaut : final_1080p)")
     parser.add_argument("--scene", default="", help="identifiant ou nom de la scène à exporter")
+    parser.add_argument(
+        "--all-scenes", action="store_true", help="exporte toutes les scènes à la suite (vidéo complète)"
+    )
     return parser
 
 
@@ -96,10 +99,19 @@ def run_selftest(out: list[str] | None = None) -> int:
     return 0 if ok else 1
 
 
-def run_export(project_path: str, output: str, profile_id: str, scene_ref: str = "") -> int:
+def run_export(
+    project_path: str, output: str, profile_id: str, scene_ref: str = "", all_scenes: bool = False
+) -> int:
     from antares_studio.app.main import create_app
     from antares_studio.persistence.store import ProjectStore, resolve_project_root
-    from antares_studio.rendering.exporter import RenderError, audio_plans_for_scene, export_video
+    from antares_studio.rendering.exporter import (
+        ProjectRenderResult,
+        RenderError,
+        RenderResult,
+        audio_plans_for_scene,
+        export_project,
+        export_video,
+    )
     from antares_studio.rendering.plan import PROFILES, build_render_plan
 
     create_app([])
@@ -120,20 +132,29 @@ def run_export(project_path: str, output: str, profile_id: str, scene_ref: str =
         asset = project.asset(asset_id)
         return (root / asset.path) if asset and (root / asset.path).is_file() else None
 
+    last = [-1]
+
+    def progress(done: int, total: int) -> None:
+        pct = done * 100 // max(1, total)
+        if pct // 10 != last[0]:
+            last[0] = pct // 10
+            print(f"{pct:3d} % ({done}/{total})", flush=True)
+
     try:
-        audio = audio_plans_for_scene(project, scene.id, resolve)
-        plan = build_render_plan(project, scene.id, profile_id, str(Path(output).resolve()), audio=audio)
-        for w in plan.warnings:
-            print(f"avertissement : {w}", file=sys.stderr)
-        last = [-1]
-
-        def progress(done: int, total: int) -> None:
-            pct = done * 100 // total
-            if pct // 10 != last[0]:
-                last[0] = pct // 10
-                print(f"{pct:3d} % ({done}/{total})", flush=True)
-
-        result = export_video(project, plan, progress=progress, assets=resolve)
+        result: RenderResult | ProjectRenderResult
+        if all_scenes:
+            result = export_project(
+                project, profile_id, str(Path(output).resolve()), progress=progress, assets=resolve
+            )
+            for p in result.plans:
+                for w in p.warnings:
+                    print(f"avertissement ({p.scene_name}) : {w}", file=sys.stderr)
+        else:
+            audio = audio_plans_for_scene(project, scene.id, resolve)
+            plan = build_render_plan(project, scene.id, profile_id, str(Path(output).resolve()), audio=audio)
+            for w in plan.warnings:
+                print(f"avertissement : {w}", file=sys.stderr)
+            result = export_video(project, plan, progress=progress, assets=resolve)
     except Exception as exc:  # noqa: BLE001 — sortie CLI : message clair, code de retour 1
         details = getattr(exc, "details", "")
         print(f"échec de l'export : {exc}\n{details}".rstrip(), file=sys.stderr)
@@ -152,5 +173,5 @@ def run_cli(argv: list[str]) -> int | None:
     if args.selftest:
         return run_selftest()
     if args.export:
-        return run_export(args.export[0], args.export[1], args.profile, args.scene)
+        return run_export(args.export[0], args.export[1], args.profile, args.scene, args.all_scenes)
     return None

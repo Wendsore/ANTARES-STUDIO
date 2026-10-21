@@ -7,10 +7,12 @@ Nécessite une ``QGuiApplication`` existante (polices) ; peut s'exécuter dans u
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 import threading
 import time
@@ -24,7 +26,7 @@ from antares_studio.domain.model import Project
 from antares_studio.domain.validation import ProjectValidationError, validate_project
 from antares_studio.persistence.schema import project_to_dict
 from antares_studio.rendering import ffmpeg as ff
-from antares_studio.rendering.plan import AudioClipPlan, RenderPlan
+from antares_studio.rendering.plan import AudioClipPlan, RenderPlan, build_render_plan
 from antares_studio.rendering.qt_painter import AssetResolver, ImageCache, render_state_to_image
 from antares_studio.resources.licenses import credits_lines
 from antares_studio.timeline.evaluator import evaluate
@@ -104,6 +106,10 @@ def _build_ffmpeg_command(ffmpeg: Path, plan: RenderPlan, tmp_output: Path) -> l
         filters.append(mix)
         cmd += ["-filter_complex", ";".join(filters), "-map", "0:v:0", "-map", "[aout]"]
         cmd += ["-c:a", profile.audio_codec, "-b:a", profile.audio_bitrate]
+    elif plan.silent_audio:
+        # piste silencieuse : toutes les scènes d'un export complet ont la même structure de flux
+        cmd += ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"]
+        cmd += ["-map", "0:v:0", "-map", "1:a:0", "-c:a", profile.audio_codec, "-b:a", profile.audio_bitrate]
     cmd += profile.ffmpeg_video_args()
     cmd += ["-t", f"{plan.duration_seconds:.6f}", "-f", profile.container, str(tmp_output)]
     return cmd
@@ -236,6 +242,178 @@ def export_video(
     return RenderResult(output, manifest_path, result, elapsed, plan)
 
 
+@dataclass(frozen=True)
+class ProjectRenderResult:
+    output_path: Path
+    manifest_path: Path
+    probe: ff.ProbeResult
+    elapsed_seconds: float
+    plans: tuple[RenderPlan, ...]
+
+
+def export_project(
+    project: Project,
+    profile_id: str,
+    output_path: str,
+    progress: ProgressCallback | None = None,
+    cancel: threading.Event | None = None,
+    assets: AssetResolver | None = None,
+    ffmpeg_path: str | None = None,
+    scene_ids: list[str] | None = None,
+) -> ProjectRenderResult:
+    """Exporte les scènes à la suite (vidéo complète) : rendu par scène puis enchaînement sans ré-encodage.
+
+    Chaque scène est rendue avec le même profil et une piste audio (silence si besoin) ; FFmpeg concatène
+    les fichiers (démultiplexeur ``concat``, ``-c copy``), le résultat est vérifié (somme des images),
+    les sous-titres sont fusionnés avec décalage et les crédits écrits à côté.
+    """
+    from antares_studio.domain.model import Subtitle
+
+    ids = scene_ids or [s.id for s in project.scenes]
+    if not ids:
+        raise RenderError("le projet ne contient aucune scène")
+    ffmpeg = ff.require_ffmpeg(ffmpeg_path)
+    ffprobe = ff.find_ffprobe(ffmpeg=ffmpeg)
+    if ffprobe is None:
+        raise ff.FFmpegNotFoundError(
+            "ffprobe est introuvable à côté de FFmpeg ; l'export ne peut pas être vérifié."
+        )
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    cancel = cancel or threading.Event()
+    t0 = time.perf_counter()
+    plans: list[RenderPlan] = []
+    for sid in ids:
+        audio = audio_plans_for_scene(project, sid, assets)
+        plans.append(build_render_plan(project, sid, profile_id, "", audio=audio, silent_audio=not audio))
+    total = sum(p.total_frames for p in plans)
+    done = 0
+    merged: list[Subtitle] = []
+    offset = 0
+    with tempfile.TemporaryDirectory(prefix=".antares-export-", dir=output.parent) as tmpdir:
+        tmp = Path(tmpdir)
+        parts: list[Path] = []
+        for i, plan in enumerate(plans):
+            part = tmp / f"scene-{i:03d}.{plan.profile.container}"
+            plan_i = dataclasses.replace(plan, output_path=str(part))
+            base = done
+
+            def cb(k: int, _n: int, base: int = base) -> None:
+                if progress:
+                    progress(base + k, total)
+
+            export_video(
+                project,
+                plan_i,
+                progress=cb,
+                cancel=cancel,
+                assets=assets,
+                ffmpeg_path=ffmpeg_path,
+                write_manifest=False,
+            )
+            parts.append(part)
+            done += plan.total_frames
+            scene = project.scene(plan.scene_id)
+            for s in scene.subtitles:
+                if s.end_frame > plan.start_frame:
+                    merged.append(
+                        Subtitle(
+                            s.id,
+                            offset + max(0, s.start_frame - plan.start_frame),
+                            offset + min(plan.total_frames, s.end_frame - plan.start_frame),
+                            s.text,
+                        )
+                    )
+            offset += plan.total_frames
+        if cancel.is_set():
+            raise RenderCancelledError("export annulé")
+        listing = tmp / "concat.txt"
+        listing.write_text("".join(f"file '{p.as_posix()}'\n" for p in parts), encoding="utf-8")
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=f".{output.stem}-", suffix=f".{plans[0].profile.container}.part", dir=output.parent
+        )
+        os.close(fd)
+        tmp_output = Path(tmp_name)
+        cmd = [
+            str(ffmpeg),
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-nostdin",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(listing),
+            "-c",
+            "copy",
+            "-movflags",
+            "+faststart",
+            "-f",
+            plans[0].profile.container,
+            str(tmp_output),
+        ]
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=3600, check=False, creationflags=ff._NO_WINDOW
+        )
+        if proc.returncode != 0:
+            _cleanup(tmp_output)
+            raise RenderError(
+                f"FFmpeg a échoué lors de l'enchaînement (code {proc.returncode}).", proc.stderr
+            )
+        result = ff.probe(ffprobe, tmp_output)
+        problems = []
+        if result.nb_frames != total:
+            problems.append(f"{result.nb_frames} images au lieu de {total}")
+        if (result.width, result.height) != (plans[0].width, plans[0].height):
+            problems.append("résolution inattendue")
+        if not result.has_audio:
+            problems.append("piste audio absente")
+        if problems:
+            _cleanup(tmp_output)
+            raise RenderError("La vidéo complète ne correspond pas au plan : " + " ; ".join(problems))
+        os.replace(tmp_output, output)
+    elapsed = time.perf_counter() - t0
+    if merged:
+        output.with_suffix(".srt").write_text(format_srt(merged, project.canvas.fps), encoding="utf-8")
+    credits = credits_lines(project)
+    output.with_suffix(".credits.txt").write_text("\n".join(credits) + "\n", encoding="utf-8")
+    manifest_path = output.with_suffix(output.suffix + ".manifest.json")
+    manifest: dict[str, Any] = {
+        "software": "ANTARES Studio",
+        "software_version": plans[0].software_version,
+        "created_at": plans[0].created_at,
+        "profile_id": profile_id,
+        "scenes": [
+            {
+                "scene_id": p.scene_id,
+                "scene_name": p.scene_name,
+                "frames": p.total_frames,
+                "audio_clips": len(p.audio),
+            }
+            for p in plans
+        ],
+        "tools": {"ffmpeg": ff.tool_version(ffmpeg), "ffprobe": ff.tool_version(ffprobe)},
+        "result": {
+            "width": result.width,
+            "height": result.height,
+            "fps": str(result.fps),
+            "nb_frames": result.nb_frames,
+            "duration": result.duration,
+            "video_codec": result.video_codec,
+            "has_audio": result.has_audio,
+            "elapsed_seconds": round(elapsed, 3),
+        },
+        "warnings": [w for p in plans for w in p.warnings],
+        "credits": credits,
+        "scientific_metadata": project.scientific_metadata,
+    }
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    return ProjectRenderResult(output, manifest_path, result, elapsed, tuple(plans))
+
+
 def _verify(result: ff.ProbeResult, plan: RenderPlan) -> None:
     problems = []
     if (result.width, result.height) != (plan.width, plan.height):
@@ -244,7 +422,7 @@ def _verify(result: ff.ProbeResult, plan: RenderPlan) -> None:
         problems.append(f"{result.nb_frames} images au lieu de {plan.total_frames}")
     if result.fps.numerator * plan.fps_den != plan.fps_num * result.fps.denominator:
         problems.append(f"cadence {result.fps} au lieu de {plan.fps_num}/{plan.fps_den}")
-    if plan.audio and not result.has_audio:
+    if (plan.audio or plan.silent_audio) and not result.has_audio:
         problems.append("piste audio absente")
     if problems:
         raise RenderError("Le fichier exporté ne correspond pas au plan : " + " ; ".join(problems))

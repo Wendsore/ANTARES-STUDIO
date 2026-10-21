@@ -7,6 +7,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, QThread, Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QFileDialog,
@@ -25,10 +26,12 @@ from antares_studio.app.document import ProjectDocument
 from antares_studio.app.settings import AppSettings
 from antares_studio.rendering import ffmpeg as ff
 from antares_studio.rendering.exporter import (
+    ProjectRenderResult,
     RenderCancelledError,
     RenderError,
     RenderResult,
     audio_plans_for_scene,
+    export_project,
     export_video,
 )
 from antares_studio.rendering.plan import PROFILES, RenderPlan, build_render_plan
@@ -40,23 +43,43 @@ class _Worker(QObject):
     failed = Signal(str, str)
     cancelled = Signal()
 
-    def __init__(self, document: ProjectDocument, plan: RenderPlan, ffmpeg_path: str):
+    def __init__(
+        self,
+        document: ProjectDocument,
+        plan: RenderPlan | None,
+        ffmpeg_path: str,
+        whole_project: tuple[str, str] | None = None,  # (profil, fichier de sortie) : toutes les scènes
+    ):
         super().__init__()
         self.document = document
         self.plan = plan
         self.ffmpeg_path = ffmpeg_path
+        self.whole_project = whole_project
         self.cancel = threading.Event()
 
     def run(self) -> None:
         try:
-            result = export_video(
-                self.document.project,
-                self.plan,
-                progress=lambda i, n: self.progress.emit(i, n),
-                cancel=self.cancel,
-                assets=self.document.resolve_asset,
-                ffmpeg_path=self.ffmpeg_path or None,
-            )
+            result: RenderResult | ProjectRenderResult
+            if self.whole_project is not None:
+                result = export_project(
+                    self.document.project,
+                    self.whole_project[0],
+                    self.whole_project[1],
+                    progress=lambda i, n: self.progress.emit(i, n),
+                    cancel=self.cancel,
+                    assets=self.document.resolve_asset,
+                    ffmpeg_path=self.ffmpeg_path or None,
+                )
+            else:
+                assert self.plan is not None
+                result = export_video(
+                    self.document.project,
+                    self.plan,
+                    progress=lambda i, n: self.progress.emit(i, n),
+                    cancel=self.cancel,
+                    assets=self.document.resolve_asset,
+                    ffmpeg_path=self.ffmpeg_path or None,
+                )
         except RenderCancelledError:
             self.cancelled.emit()
         except (RenderError, ff.FFmpegError, ff.FFmpegNotFoundError) as exc:
@@ -74,7 +97,7 @@ class ExportDialog(QDialog):
         self.settings = settings
         self._thread: QThread | None = None
         self._worker: _Worker | None = None
-        self.render_result: RenderResult | None = None
+        self.render_result: RenderResult | ProjectRenderResult | None = None
         self.setWindowTitle("Exporter la vidéo")
         self.setModal(True)
         form = QFormLayout()
@@ -84,6 +107,12 @@ class ExportDialog(QDialog):
         idx = self.profile.findData(settings.last_export_profile())
         self.profile.setCurrentIndex(max(0, idx))
         form.addRow("Profil :", self.profile)
+        self.all_scenes = QCheckBox("Toutes les scènes à la suite (vidéo complète)")
+        self.all_scenes.setToolTip(
+            "Rend chaque scène puis les enchaîne sans ré-encodage ; sous-titres fusionnés et crédits à côté."
+        )
+        self.all_scenes.toggled.connect(self._refresh_default_path)
+        form.addRow("", self.all_scenes)
         scene = document.scene
         fps = float(document.project.canvas.fps)
         if scene is not None:
@@ -130,11 +159,16 @@ class ExportDialog(QDialog):
         layout.addLayout(buttons)
         self.resize(560, 260)
 
+    def _refresh_default_path(self) -> None:
+        self.path_edit.setText(str(self._default_path()))
+
     def _default_path(self) -> Path:
         scene = self.document.scene
         base = (scene.name if scene else "scene").replace("/", "-").replace("\\", "-")
         title = (self.document.project.title or "video").replace("/", "-").replace("\\", "-")
         folder = self.document.paths.renders if self.document.paths else Path(self.settings.last_directory())
+        if getattr(self, "all_scenes", None) is not None and self.all_scenes.isChecked():
+            return folder / f"{title}.mp4"
         return folder / f"{title} - {base}.mp4"
 
     def _browse(self) -> None:
@@ -156,19 +190,24 @@ class ExportDialog(QDialog):
             return
         pid = str(self.profile.currentData())
         self.settings.set_last_export_profile(pid)
-        try:
-            audio = audio_plans_for_scene(self.document.project, scene.id, self.document.resolve_asset)
-        except RenderError as exc:
-            QMessageBox.warning(self, "Export", str(exc))
-            return
-        try:
-            plan = build_render_plan(self.document.project, scene.id, pid, str(out), audio=audio)
-        except ValueError as exc:
-            QMessageBox.warning(self, "Export", str(exc))
-            return
-        if plan.warnings:
-            self.status.setText("Avertissement : " + " ".join(plan.warnings))
-        self._worker = _Worker(self.document, plan, self.settings.ffmpeg_path())
+        if self.all_scenes.isChecked():
+            self._worker = _Worker(
+                self.document, None, self.settings.ffmpeg_path(), whole_project=(pid, str(out))
+            )
+        else:
+            try:
+                audio = audio_plans_for_scene(self.document.project, scene.id, self.document.resolve_asset)
+            except RenderError as exc:
+                QMessageBox.warning(self, "Export", str(exc))
+                return
+            try:
+                plan = build_render_plan(self.document.project, scene.id, pid, str(out), audio=audio)
+            except ValueError as exc:
+                QMessageBox.warning(self, "Export", str(exc))
+                return
+            if plan.warnings:
+                self.status.setText("Avertissement : " + " ".join(plan.warnings))
+            self._worker = _Worker(self.document, plan, self.settings.ffmpeg_path())
         self._thread = QThread(self)
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
@@ -200,7 +239,7 @@ class ExportDialog(QDialog):
 
     def _on_finished(self, result: object) -> None:
         self._finish_thread()
-        assert isinstance(result, RenderResult)
+        assert isinstance(result, RenderResult | ProjectRenderResult)
         self.render_result = result
         pr = result.probe
         self.progress.setValue(100)

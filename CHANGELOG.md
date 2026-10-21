@@ -2,6 +2,10 @@
 
 Toutes les évolutions **effectives** (pas les intentions). Format : date, lot, changements observables.
 
+## [0.1.0.dev0] — 2026-10-21 — Export de la vidéo complète
+
+- Dialogue d'export : « Toutes les scènes à la suite (vidéo complète) » ; CLI `--export … --all-scenes`. Chaque scène est rendue puis enchaînée sans ré-encodage ; piste audio silencieuse ajoutée aux scènes muettes ; sous-titres fusionnés (`.srt`), crédits (`.credits.txt`) et manifest listant les scènes.
+
 ## [0.1.0.dev0] — 2026-10-21 — Équations rendues localement
 
 - Nouvel objet **Équation (formule)** : mini-langage à syntaxe LaTeX réduite (`^{}`, `_{}`, `\frac`, `\sqrt`, `\vec`, `\hat`, `\bar`, `\text`, lettres grecques, opérateurs), analysé sans exécution, dessiné par le painter partagé (fractions, radicaux, indices), variables en italique ; aucune installation LaTeX requise.
