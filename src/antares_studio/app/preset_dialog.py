@@ -84,6 +84,8 @@ class PresetDialog(QDialog):
                             "ease_in": "Accélération",
                             "ease_out": "Décélération",
                             "ease_in_out": "Douce",
+                            "analytique": "Analytique (équation de Kepler)",
+                            "verlet": "Numérique (Verlet, énergie contrôlée)",
                         }.get(ch, ch),
                         ch,
                     )

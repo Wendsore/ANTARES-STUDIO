@@ -31,7 +31,7 @@ La scène contient déjà le Soleil, la Terre, l'orbite, la Lune animée sur un 
 ## 4. Animer sans programmer
 
 1. Sélectionnez un objet, puis onglet **Animations** de la Bibliothèque (ou menu `Animation`).
-2. Double-cliquez sur **Orbite schématique**, **Apparition**, **Translation**, **Rotation**, **Pulsation** ou **Disparition**.
+2. Double-cliquez sur **Orbite schématique**, **Orbite de Kepler** (ellipse autour d'un foyer, méthode analytique ou numérique), **Apparition**, **Translation**, **Rotation**, **Pulsation** ou **Disparition**.
 3. Réglez début, durée et paramètres (rayon, centre, nombre de tours, sens…) puis « Appliquer ».
 
 Pour une animation sur mesure : placez la tête de lecture, cliquez sur le losange ◆ à côté d'une propriété dans l'Inspecteur pour poser une **image clé**, déplacez-vous dans le temps, modifiez la valeur. Avec « Clé auto » (Timeline), chaque modification pose une clé.

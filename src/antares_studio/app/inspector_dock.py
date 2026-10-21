@@ -181,7 +181,11 @@ class InspectorDock(QWidget):
         meta = self.document.project.scientific_metadata
         self.form.addRow(QLabel("<b>Métadonnées scientifiques</b>"))
         repr_box = QComboBox()
-        repr_box.addItem("Schématique", "schematic")
+        # distinction du master prompt §9.3 : schématique / modélisation / simulation / données mesurées
+        repr_box.addItem("Schématique (visuel arbitraire)", "schematic")
+        repr_box.addItem("Modélisation (hypothèses explicites)", "model")
+        repr_box.addItem("Simulation numérique (algorithme, pas, erreurs)", "simulation")
+        repr_box.addItem("Données mesurées (source, incertitude)", "data")
         repr_box.addItem("À l'échelle", "to_scale")
         repr_box.addItem("Mixte (préciser dans les notes)", "mixed")
         idx = repr_box.findData(str(meta.get("representation", "schematic")))
