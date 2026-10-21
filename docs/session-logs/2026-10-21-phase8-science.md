@@ -21,6 +21,14 @@
 
 Tests : `tests/unit/test_science.py` (8 tests) ; suite complète : voir ligne du journal de `docs/PROJECT_STATUS.md`.
 
+## Lot 2 — import CSV avec unités et objet Graphique (même PR #7)
+
+- `science/data.py` : lecture CSV tolérante (séparateur `;` `,` tabulation détecté, virgule décimale, encodages UTF-8/cp1252), en-têtes `nom (unité)` / `nom [unité]`, diagnostics (lignes incomplètes, cellules non numériques, colonne texte), refus d'un fichier sans colonne numérique ; jamais d'interprétation du contenu ; graduations « rondes » (`nice_ticks`).
+- Type d'objet **Graphique (courbe de données)** : données CSV du projet (ressource de type `data`, copiée dans `assets/` avec SHA-256 et fiche de provenance), colonnes X/Y proposées par l'inspecteur, axes avec unités, grille, titre, bornes auto ou forcées, points, **progression du tracé animable** ; cadre explicite si données ou colonnes absentes.
+- Preset **Tracer la courbe** (progression 0 → 1) ; `Objet > Importer des données (CSV) en graphique…`.
+- Tests : `tests/unit/test_data_chart.py` (en-têtes, séparateurs, diagnostics, refus, contenu « =cmd » traité comme texte, rendu : 0 pixel de courbe à 0 %, croissance à 50 % et 100 %, cadres d'absence), `tests/ui/test_chart_import.py` (import → graphique + colonnes dans l'inspecteur, refus explicite, export avec la ressource du projet).
+- Capture : `docs/images/graphique-csv-2026-10-21.png`.
+
 ## Reste à faire (phase 8)
 
-Import CSV avec unités et courbes (objet graphe), N-corps simplifié, champ vectoriel ; phase 7 (Blender) non entamée : repli « Blender absent » = aucune fonction 3D, les fonctions 2D ne dépendent de rien.
+N-corps simplifié, champ vectoriel, histogrammes et fonctions analytiques dans le graphique ; phase 7 (Blender) non entamée : repli « Blender absent » = aucune fonction 3D, les fonctions 2D ne dépendent de rien.

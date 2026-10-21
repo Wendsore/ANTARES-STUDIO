@@ -111,6 +111,12 @@ PRESETS: dict[str, PresetSpec] = {
             ),
         ),
         PresetSpec(
+            "trace",
+            "Tracer la courbe",
+            "Dessine progressivement la courbe d'un graphique (progression 0 → 1).",
+            _COMMON + (_EASING,),
+        ),
+        PresetSpec(
             "kepler",
             "Orbite de Kepler (modélisation)",
             "Ellipse képlérienne autour d'un corps placé au foyer (lois de Kepler, deux corps) ; "
@@ -198,6 +204,11 @@ def apply_preset(preset_id: str, node: Node, params: dict[str, Any] | None = Non
             tx.set_keyframe(f, cx + r * math.cos(a), "linear")
             ty.set_keyframe(f, cy + r * math.sin(a), "linear")
         tracks += [tx, ty]
+    elif preset_id == "trace":
+        t = Track(node.id, "params.progress")
+        t.set_keyframe(start, 0.0, easing)
+        t.set_keyframe(end, 1.0, easing)
+        tracks.append(t)
     elif preset_id == "kepler":
         tracks += _kepler_tracks(node, p, start, dur)
     return tracks

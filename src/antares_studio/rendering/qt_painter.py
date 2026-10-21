@@ -27,6 +27,7 @@ from PySide6.QtGui import (
 
 from antares_studio.domain.colors import is_color, parse_color
 from antares_studio.domain.model import DEFAULT_SUBTITLE_STYLE, Canvas
+from antares_studio.science.data import DataError, DataTable, load_csv, nice_ticks
 from antares_studio.timeline.evaluator import NodeState, SceneState
 
 AssetResolver = Callable[[str], Path | None]
@@ -46,6 +47,7 @@ class ImageCache:
 
     def __init__(self, limit: int = 64):
         self._items: dict[str, QImage] = {}
+        self._tables: dict[str, DataTable | None] = {}
         self._limit = limit
 
     def get(self, path: Path) -> QImage | None:
@@ -62,8 +64,24 @@ class ImageCache:
             self._items[key] = img
         return img
 
+    def get_table(self, path: Path) -> DataTable | None:
+        """Table CSV (données de graphique) mise en cache ; ``None`` si absente ou illisible."""
+        key = str(path)
+        if key in self._tables:
+            return self._tables[key]
+        table: DataTable | None
+        try:
+            table = load_csv(path) if path.is_file() else None
+        except (DataError, OSError):
+            table = None
+        if len(self._tables) >= self._limit:
+            self._tables.pop(next(iter(self._tables)))
+        self._tables[key] = table
+        return table
+
     def clear(self) -> None:
         self._items.clear()
+        self._tables.clear()
 
 
 def paint_scene_state(
@@ -428,6 +446,151 @@ def _draw_image(painter: QPainter, node: NodeState, assets: AssetResolver | None
             painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
 
 
+def chart_frame(params: dict[str, Any]) -> QRectF:
+    w, h = float(params.get("width", 640.0)), float(params.get("height", 400.0))
+    return QRectF(-w / 2, -h / 2, w, h)
+
+
+def _axis_range(values: list[float], lo: float, hi: float) -> tuple[float, float]:
+    """Bornes d'un axe : valeurs forcées (≠ 0) sinon étendue des données avec marge de 5 %."""
+    if not values:
+        return (0.0, 1.0)
+    vmin, vmax = min(values), max(values)
+    if vmax <= vmin:
+        vmin, vmax = vmin - 1.0, vmax + 1.0
+    pad = (vmax - vmin) * 0.05
+    return (lo if lo != 0.0 else vmin - pad, hi if hi != 0.0 else vmax + pad)
+
+
+def _draw_chart(painter: QPainter, node: NodeState, assets: AssetResolver | None, cache: ImageCache) -> None:
+    p = node.params
+    frame = chart_frame(p)
+    axis_color = qcolor(node.style.get("axis_color", "#CFD8DC"))
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QBrush(qcolor(node.style.get("fill", "#0B102080"))))
+    painter.drawRect(frame)
+    table: DataTable | None = None
+    asset_id = str(p.get("data_asset_id", ""))
+    if assets is not None and asset_id:
+        path = assets(asset_id)
+        if path is not None:
+            table = cache.get_table(path)
+    font = QFont("DejaVu Sans")
+    font.setPointSizeF(max(4.0, float(p.get("font_size", 18.0))))
+    painter.setFont(font)
+    fm = QFontMetricsF(font)
+    x_name, y_name = str(p.get("x_column", "")), str(p.get("y_column", ""))
+    points = table.xy(x_name, y_name) if table is not None else []
+    if table is None or not points:
+        # données absentes ou colonnes inconnues : cadre explicite, jamais de crash
+        painter.setPen(QPen(QColor("#FF5555"), 3, Qt.PenStyle.DashLine))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRect(frame)
+        painter.setPen(QPen(axis_color))
+        msg = "Données CSV absentes" if table is None else f"Colonnes introuvables : {x_name!r}, {y_name!r}"
+        painter.drawText(frame, int(Qt.AlignmentFlag.AlignCenter), msg)
+        return
+    cx_col, cy_col = table.column(x_name), table.column(y_name)
+    assert cx_col is not None and cy_col is not None
+    margin_l = fm.horizontalAdvance("-0.000e+00") + fm.height() * 1.4
+    margin_b = fm.height() * 2.6
+    margin_t = fm.height() * (1.6 if p.get("title") else 0.6)
+    plot = QRectF(frame.left() + margin_l, frame.top() + margin_t, frame.width() - margin_l - fm.height(), 0)
+    plot.setHeight(frame.height() - margin_t - margin_b)
+    xs = [q[0] for q in points]
+    ys = [q[1] for q in points]
+    x0, x1 = _axis_range(xs, float(p.get("x_min", 0.0)), float(p.get("x_max", 0.0)))
+    y0, y1 = _axis_range(ys, float(p.get("y_min", 0.0)), float(p.get("y_max", 0.0)))
+
+    def to_px(x: float, y: float) -> QPointF:
+        return QPointF(
+            plot.left() + (x - x0) / (x1 - x0) * plot.width(),
+            plot.bottom() - (y - y0) / (y1 - y0) * plot.height(),
+        )
+
+    def fmt(v: float) -> str:
+        return f"{v:g}"
+
+    # grille et graduations
+    grid_pen = QPen(QColor(axis_color.red(), axis_color.green(), axis_color.blue(), 50), 1)
+    tick_pen = QPen(axis_color, 1.5)
+    text_pen = QPen(axis_color)
+    for t in nice_ticks(x0, x1):
+        pt = to_px(t, y0)
+        if bool(p.get("show_grid", True)):
+            painter.setPen(grid_pen)
+            painter.drawLine(QPointF(pt.x(), plot.top()), QPointF(pt.x(), plot.bottom()))
+        painter.setPen(tick_pen)
+        painter.drawLine(QPointF(pt.x(), plot.bottom()), QPointF(pt.x(), plot.bottom() + 6))
+        painter.setPen(text_pen)
+        label = fmt(t)
+        painter.drawText(
+            QPointF(pt.x() - fm.horizontalAdvance(label) / 2, plot.bottom() + 8 + fm.ascent()), label
+        )
+    for t in nice_ticks(y0, y1):
+        pt = to_px(x0, t)
+        if bool(p.get("show_grid", True)):
+            painter.setPen(grid_pen)
+            painter.drawLine(QPointF(plot.left(), pt.y()), QPointF(plot.right(), pt.y()))
+        painter.setPen(tick_pen)
+        painter.drawLine(QPointF(plot.left() - 6, pt.y()), QPointF(plot.left(), pt.y()))
+        painter.setPen(text_pen)
+        label = fmt(t)
+        painter.drawText(
+            QPointF(plot.left() - 10 - fm.horizontalAdvance(label), pt.y() + fm.ascent() / 2 - 1), label
+        )
+    painter.setPen(QPen(axis_color, 2))
+    painter.drawLine(plot.bottomLeft(), plot.bottomRight())
+    painter.drawLine(plot.bottomLeft(), plot.topLeft())
+    # libellés d'axes avec unités, titre
+    painter.setPen(text_pen)
+    xl = cx_col.label
+    painter.drawText(
+        QPointF(plot.center().x() - fm.horizontalAdvance(xl) / 2, frame.bottom() - fm.descent() - 2), xl
+    )
+    painter.save()
+    painter.translate(frame.left() + fm.ascent() + 2, plot.center().y())
+    painter.rotate(-90)
+    yl = cy_col.label
+    painter.drawText(QPointF(-fm.horizontalAdvance(yl) / 2, 0), yl)
+    painter.restore()
+    title = str(p.get("title", ""))
+    if title:
+        painter.drawText(
+            QPointF(plot.center().x() - fm.horizontalAdvance(title) / 2, frame.top() + fm.ascent() + 4), title
+        )
+    # courbe (progression : fraction des points tracés, interpolation du dernier segment)
+    progress = max(0.0, min(1.0, float(p.get("progress", 1.0))))
+    n = len(points)
+    reach = progress * (n - 1)
+    k = int(math.floor(reach))
+    poly = [to_px(*q) for q in points[: k + 1]]
+    if k < n - 1 and reach > k:
+        (xa, ya), (xb, yb) = points[k], points[k + 1]
+        u = reach - k
+        poly.append(to_px(xa + (xb - xa) * u, ya + (yb - ya) * u))
+    painter.setClipRect(plot.adjusted(-2, -2, 2, 2))
+    lw = float(p.get("line_width", 3.0))
+    painter.setPen(
+        QPen(
+            qcolor(node.style.get("stroke", "#4FC3F7")),
+            lw,
+            Qt.PenStyle.SolidLine,
+            Qt.PenCapStyle.RoundCap,
+            Qt.PenJoinStyle.RoundJoin,
+        )
+    )
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    if len(poly) >= 2:
+        painter.drawPolyline(QPolygonF(poly))
+    if bool(p.get("show_points", False)):
+        painter.setBrush(QBrush(qcolor(node.style.get("stroke", "#4FC3F7"))))
+        painter.setPen(Qt.PenStyle.NoPen)
+        for pt in poly[: k + 1]:
+            painter.drawEllipse(pt, lw * 1.2, lw * 1.2)
+    painter.setClipping(False)
+
+
 def _draw_group(painter: QPainter, node: NodeState, assets: AssetResolver | None, cache: ImageCache) -> None:
     return None
 
@@ -443,6 +606,7 @@ _DRAWERS: dict[str, Callable[[QPainter, NodeState, AssetResolver | None, ImageCa
     "orbit_path": _draw_orbit_path,
     "text": _draw_text,
     "callout": _draw_callout,
+    "chart": _draw_chart,
     "image": _draw_image,
     "group": _draw_group,
 }
@@ -484,6 +648,8 @@ def local_bounds(node: NodeState) -> QRectF:
         return rect
     if k == "callout":
         return callout_rect(p)
+    if k == "chart":
+        return chart_frame(p)
     if k == "image":
         w = float(p.get("width", 300.0))
         h = float(p.get("height", 0.0) or 0.0) or w * 0.75

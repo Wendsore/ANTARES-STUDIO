@@ -45,9 +45,11 @@ def scale_warning_node(canvas: Canvas, text: str = SCALE_WARNING_TEXT) -> Node:
         font_size=28 * k,
         padding=14 * k,
     )
-    if len(text) > 70:  # texte long : deux lignes dans 85 % de la largeur, remonté d'autant
+    if len(text) > 70:
+        # texte long : replié sur 85 % de la largeur et remonté ; la police de substitution de Windows
+        # (DejaVu absente) donne jusqu'à trois lignes, la boîte doit rester au-dessus de la bande (80 %)
         node.params["max_width"] = canvas.width * 0.85
-        node.position[1] = canvas.height - 290 * k
+        node.position[1] = canvas.height - 310 * k
     return node
 
 
@@ -221,9 +223,7 @@ def build_orbit_vectors(project: Project, scene: Scene) -> None:
     gravity = new_node("arrow", "Gravitation", 0.0, 0.0, end=[-120 * k, 0.0], head_size=22 * k)
     gravity.parent_id = planet.id
     gravity.style["stroke"] = "#EF5350"
-    legend = scale_warning_node(
-        c, "Orbite circulaire schématique, non à l'échelle — v (orange) tangent, g (rouge) vers l'astre"
-    )
+    legend = scale_warning_node(c, "Schéma non à l'échelle — v (orange) tangent, g (rouge) vers l'astre")
     for n in (path, star, planet, velocity, gravity, legend):
         scene.nodes.append(n)
     scene.tracks += apply_preset(
