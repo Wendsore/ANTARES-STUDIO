@@ -7,10 +7,10 @@ Dernière mise à jour : 2026-10-21 (phases 0 à 6 réalisées sur Linux ; parco
 - **Phase active : 8 (suite : CSV, N-corps) et 9 (installateur, validation Windows réelle).** Phases 0 à 6 réalisées sur Linux ; phase 8 entamée (unités, Kepler analytique + numérique, modèle P3) ; phase 9 entamée (CLI, paquet PyInstaller autotesté sur Windows CI) ; phase 7 (Blender) non entamée.
 - Phases 0 à 6 : `DONE` sur Linux (gates prouvés par tests automatisés, voir journal ; Gate 5 = parcours P1 complet par l'interface, Gate 6 = crédits générés et scène « Crédits »). Validation Windows : CI `windows-latest` verte pour le cœur (47 tests, FFmpeg 9.0.2) sur PR #2 ; tests UI Windows à lire sur les PR #3, #4 et #5. Vidéo ≥ 2 min avec narration réelle : NON TESTÉ (fixtures synthétiques de quelques secondes).
 - **MVP candidat : non** (Gates 0–6 prouvés sur Linux ; le parcours P1 reste à reproduire sur Windows, R-005). **Logiciel utilisable : oui, en version de développement** (`antares-studio`) : nouveau projet avec modèles, édition visuelle (sélection, glisser, poignées, inspecteur, calques), 6 presets d'animation et images clés, timeline avec lecture, enregistrement/réouverture/autosave/récupération, export MP4 vérifié avec progression et annulation, narration (clips audio : décalage, gain, fondus, muet, forme d'onde), sous-titres (saisie, import/export SRT/VTT, incrustation à l'export + fichier `.srt` compagnon), provenance des ressources (fiche à l'import, inventaire, avertissements à l'export), crédits générés (`.credits.txt`, scène « Crédits »), avertissement d'échelle, métadonnées scientifiques et sources, favoris. Captures : `docs/images/editeur-phases-lune-2026-10-21.png`, `docs/images/narration-2026-10-21.png`, `docs/images/bibliotheque-provenance-2026-10-21.png`.
-- **Non disponible :** enregistrement micro (import de fichiers uniquement), packs d'icônes tiers (géométrie générative locale uniquement), équations, N-corps, histogrammes, 3D/Blender, installateur Windows (seul le dossier `.zip` PyInstaller existe).
-- **Tests exécutés :** 116 tests pytest verts sur Linux le 2026-10-21 (71 unitaires dont CLI et science, 14 intégration export/audio, 28 interface dont le parcours P1 complet, 3 documentaires), ruff et mypy strict propres.
+- **Non disponible :** enregistrement micro (import de fichiers uniquement), packs d'icônes tiers (géométrie générative locale uniquement), matrices et morphing de formules, N-corps, histogrammes, 3D/Blender, installateur Windows (seul le dossier `.zip` PyInstaller existe).
+- **Tests exécutés :** 120 tests pytest verts sur Linux le 2026-10-21 (75 unitaires dont CLI, science et formules, 14 intégration export/audio, 28 interface dont le parcours P1 complet, 3 documentaires), ruff et mypy strict propres.
 - **Moteur retenu :** rendu Qt natif + FFmpeg (ADR-0001). **Licence du code :** non choisie (propriétaire).
-- **Git :** l'agent ne peut pas fusionner les PR (action refusée par la politique de l'environnement) ; les PR sont empilées : #2 (Phase 0), #3 (phases 1–4, base `feat/phase-0-fondations`), #4 (phase 6, base `feat/phase-1-4-editeur`), #5 (phase 5, base `feat/phase-6-narration`). Le propriétaire fusionne dans l'ordre.
+- **Git :** l'agent ne peut pas fusionner les PR (action refusée par la politique de l'environnement) ; les PR sont empilées : #2 (Phase 0), #3 (phases 1–4), #4 (phase 6), #5 (phase 5), #6 (phase 9 partielle), #7 (phase 8 partielle), #8 (équations), chacune basée sur la précédente. Le propriétaire fusionne dans l'ordre.
 
 ## Commandes
 
@@ -25,7 +25,7 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q
 
 1. Phase 9 : lire le job `windows-package` de la PR #6 (artefact `ANTARES-Studio-windows-x64.zip`), installation propre et parcours P1 sur Windows 11 par le propriétaire (R-005) ; installateur et signature si identité ; latence de scrubbing mesurée (p50 55 ms à 100 objets, `docs/session-logs/2026-10-21-phase9-packaging.md`).
 2. Gate 6 complet : vidéo ≥ 2 min avec narration réelle et revue mobile 16:9 (nécessite une voix off réelle du porteur).
-3. Phase 8 (suite) : N-corps simplifié, fonctions analytiques et histogrammes dans le graphique ; équations (rendu SVG local) ; phase 7 Blender optionnel après décision propriétaire.
+3. Phase 8 (suite) : N-corps simplifié, fonctions analytiques et histogrammes dans le graphique, matrices et écriture progressive des formules ; phase 7 Blender optionnel après décision propriétaire.
 4. Décisions propriétaire : licence du produit et build FFmpeg (R-002), fusion des PR #2 → #5 (R-006).
 
 ## Journal des sessions
@@ -39,6 +39,7 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q
 | 2026-10-21 | Claude Code, Debian 13 (`ki`) | Phase 5 : provenance des ressources, inventaire des licences, crédits (fichier + scène), encadré d'avertissement d'échelle, métadonnées/sources, favoris, parcours P1 complet | 97 pytest PASS (AST-03/05/06, SCI-07/08, Gate 5 P1 1080p/30), ruff, mypy | DONE (Linux) ; Windows via CI | PR #5 |
 | 2026-10-21 | Claude Code, Debian 13 (`ki`) | Phase 9 (partiel) : CLI (--version/--selftest/--export), spec PyInstaller + build, notices tierces, job CI windows-package, banc de scrubbing | bundle Linux autotesté (248 Mo), 102 pytest PASS, ruff, mypy ; .exe construit, autotesté et export réussi sur windows-latest | DONE (partiel, Linux) ; .exe Windows via CI | PR #6 |
 | 2026-10-21 | Claude Code, Debian 13 (`ki`) | Phase 8 (partiel) : unités sourcées (IAU/CODATA), équation de Kepler, Verlet symplectique, preset et modèle « Orbite de Kepler », représentations §9.3 ; import CSV avec unités et objet Graphique (tracé progressif) | SCI-01…06 + Gate 8 (8 tests), CSV/graphique (6 tests) ; 116 pytest PASS, ruff, mypy | DONE (partiel, Linux) | PR #7 |
+| 2026-10-21 | Claude Code, Debian 13 (`ki`) | Équations : mini-langage analysé sans exécution, mise en page et rendu locaux (fractions, racines, indices, vecteurs), objet « Équation » | 4 tests formule ; 120 pytest PASS, ruff, mypy | DONE (Linux) | PR #8 |
 
 ## Suivi des problèmes
 

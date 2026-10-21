@@ -32,6 +32,7 @@ CATEGORIES: dict[str, tuple[str, ...]] = {
     "Diagrammes": ("line", "arrow", "orbit_path"),
     "Texte": ("text", "callout"),
     "Graphiques": ("chart",),
+    "Maths": ("formula",),
     "Images": ("image",),
     "Organisation": ("group",),
 }
