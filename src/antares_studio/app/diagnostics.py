@@ -29,4 +29,11 @@ def diagnostics_report(ffmpeg_setting: str = "") -> str:
         lines.append(f"  encodeur H.264 (libx264) : {'oui' if ff.has_encoder(ffmpeg, 'libx264') else 'NON'}")
         probe = ff.find_ffprobe(ffmpeg=ffmpeg)
         lines.append(f"ffprobe : {probe if probe else 'INTROUVABLE (vérification des exports impossible)'}")
+    from antares_studio.rendering.blender import blender_version, find_blender
+
+    blender = find_blender()
+    if blender is None:
+        lines.append("Blender : absent — planète 3D indisponible (les fonctions 2D n'en dépendent pas)")
+    else:
+        lines.append(f"Blender : {blender} — {blender_version(blender)}")
     return "\n".join(lines)

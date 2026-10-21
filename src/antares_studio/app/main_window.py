@@ -252,6 +252,7 @@ class MainWindow(QMainWindow):
         m_add.addAction(self.act_scale_warning)
         m_add.addAction(self._action("Importer une &image…", self.import_image, "Ctrl+I"))
         m_add.addAction(self._action("Importer des &données (CSV) en graphique…", self.import_data))
+        m_add.addAction(self._action("&Planète 3D (Blender, facultatif)…", self.add_blender_planet))
         m_anim = mb.addMenu("&Animation")
         from antares_studio.timeline.presets import PRESETS
 
@@ -724,6 +725,20 @@ class MainWindow(QMainWindow):
             asset = self.document.project.asset(str(node.params["data_asset_id"]))
             if asset is not None:
                 edit_asset_provenance(self.document, asset, self)
+
+    def add_blender_planet(self) -> None:
+        """Rend une planète en rotation avec Blender (s'il est installé) et l'insère en séquence d'images."""
+        from antares_studio.app.blender_dialog import BlenderPlanetDialog
+
+        if self.document.scene is None:
+            return
+        if self.document.paths is None:
+            QMessageBox.information(
+                self, "Planète 3D", "Enregistrez d'abord le projet : la séquence est rendue dans assets/."
+            )
+            if not self.save_project_as():
+                return
+        BlenderPlanetDialog(self.document, self).exec()
 
     def add_chart_from_csv(self, path: Path) -> Node | None:
         from antares_studio.resources.assets import import_asset

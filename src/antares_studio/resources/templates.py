@@ -26,6 +26,14 @@ def _scale(canvas: Canvas) -> float:
     return min(canvas.width / 1920, canvas.height / 1080)
 
 
+def add_sources(project: Project, sources: list[dict[str, str]]) -> None:
+    """Ajoute des sources aux métadonnées sans écraser celles des autres scènes (doublons ignorés)."""
+    existing = project.scientific_metadata.setdefault("sources", [])
+    for src in sources:
+        if src not in existing:
+            existing.append(dict(src))
+
+
 def build_empty(project: Project, scene: Scene) -> None:
     return None
 
@@ -150,10 +158,13 @@ def build_moon_phases(project: Project, scene: Scene) -> None:
             "representation": "schematic",
             "to_scale": False,
             "notes": "Géométrie Soleil–Terre–Lune simplifiée ; période et distances non respectées.",
-            "sources": [
-                {"label": "NASA Science — Moon phases", "url": "https://science.nasa.gov/moon/moon-phases/"},
-            ],
         }
+    )
+    add_sources(
+        project,
+        [
+            {"label": "NASA Science — Moon phases", "url": "https://science.nasa.gov/moon/moon-phases/"},
+        ],
     )
 
 
@@ -191,21 +202,19 @@ def build_scale_comparison(project: Project, scene: Scene) -> None:
         "translate", arrow, {"start_frame": 40, "duration_frames": 60, "dx": 0, "dy": 0}
     )
     scene.tracks += apply_preset("appear", lab2, {"start_frame": 60, "duration_frames": 20})
-    project.scientific_metadata.update(
-        {
-            "representation": "schematic",
-            "to_scale": False,
-            "sources": [
-                {
-                    "label": "IAU 2012 Resolution B2 (unité astronomique = 149 597 870 700 m)",
-                    "url": "https://www.iau.org/static/resolutions/IAU2012_English.pdf",
-                },
-                {
-                    "label": "CODATA — vitesse de la lumière c = 299 792 458 m/s",
-                    "url": "https://physics.nist.gov/cgi-bin/cuu/Value?c",
-                },
-            ],
-        }
+    project.scientific_metadata.update({"representation": "schematic", "to_scale": False})
+    add_sources(
+        project,
+        [
+            {
+                "label": "IAU 2012 Resolution B2 (unité astronomique = 149 597 870 700 m)",
+                "url": "https://www.iau.org/static/resolutions/IAU2012_English.pdf",
+            },
+            {
+                "label": "CODATA — vitesse de la lumière c = 299 792 458 m/s",
+                "url": "https://physics.nist.gov/cgi-bin/cuu/Value?c",
+            },
+        ],
     )
 
 
@@ -308,17 +317,20 @@ def build_kepler_orbit(project: Project, scene: Scene) -> None:
                 "periods": 1.0,
                 "method": "analytique",
             },
-            "sources": [
-                {
-                    "label": "JPL Solar System Dynamics — Keplerian elements and Kepler's equation",
-                    "url": "https://ssd.jpl.nasa.gov/planets/approx_pos.html",
-                },
-                {
-                    "label": "IAU 2015 B3 — constantes nominales (GM☉, GM⊕)",
-                    "url": "https://www.iau.org/static/resolutions/IAU2015_English.pdf",
-                },
-            ],
         }
+    )
+    add_sources(
+        project,
+        [
+            {
+                "label": "JPL Solar System Dynamics — Keplerian elements and Kepler's equation",
+                "url": "https://ssd.jpl.nasa.gov/planets/approx_pos.html",
+            },
+            {
+                "label": "IAU 2015 B3 — constantes nominales (GM☉, GM⊕)",
+                "url": "https://www.iau.org/static/resolutions/IAU2015_English.pdf",
+            },
+        ],
     )
 
 

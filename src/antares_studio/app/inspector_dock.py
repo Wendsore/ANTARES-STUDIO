@@ -337,10 +337,15 @@ class InspectorDock(QWidget):
             combo.addItem("Droite", "right")
             combo.currentIndexChanged.connect(lambda _i, p=path: self._commit(p, combo.currentData()))
             return combo
-        if path in ("params.asset_id", "params.data_asset_id"):
+        if path in ("params.asset_id", "params.data_asset_id", "params.sequence_asset_id"):
             combo = QComboBox()
-            wanted = "data" if path == "params.data_asset_id" else "image"
-            combo.addItem("(aucune image)" if wanted == "image" else "(aucun fichier CSV)", "")
+            wanted = {"params.data_asset_id": "data", "params.sequence_asset_id": "sequence"}.get(
+                path, "image"
+            )
+            combo.addItem(
+                {"image": "(aucune image)", "data": "(aucun fichier CSV)"}.get(wanted, "(aucune séquence)"),
+                "",
+            )
             for a in self.document.project.assets:
                 if a.kind == wanted:
                     combo.addItem(a.path, a.id)

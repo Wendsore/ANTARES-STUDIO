@@ -46,7 +46,7 @@ def qcolor(value: Any, fallback: str = "#FFFFFF") -> QColor:
 class ImageCache:
     """Cache mémoire borné des images de ressources (régénérable, non autoritatif)."""
 
-    def __init__(self, limit: int = 64):
+    def __init__(self, limit: int = 600):
         self._items: dict[str, QImage] = {}
         self._tables: dict[str, DataTable | None] = {}
         self._limit = limit
@@ -600,6 +600,45 @@ def _draw_chart(painter: QPainter, node: NodeState, assets: AssetResolver | None
     painter.setClipping(False)
 
 
+def sequence_frame_path(folder: Path, frame_index: float, frame_count: int) -> Path:
+    """Fichier ``frame_NNNN.png`` de la séquence pour un index (arrondi, borné, boucle sur la durée)."""
+    n = max(1, int(frame_count))
+    idx = int(round(frame_index)) % n
+    return folder / f"frame_{idx + 1:04d}.png"
+
+
+def _draw_image_sequence(
+    painter: QPainter, node: NodeState, assets: AssetResolver | None, cache: ImageCache
+) -> None:
+    p = node.params
+    w = float(p.get("width", 400.0))
+    h = float(p.get("height", 0.0) or 0.0)
+    img: QImage | None = None
+    asset_id = str(p.get("sequence_asset_id", ""))
+    if assets is not None and asset_id:
+        folder = assets(asset_id)
+        if folder is not None and folder.is_dir():
+            img = cache.get(
+                sequence_frame_path(folder, float(p.get("frame_index", 0.0)), int(p.get("frame_count", 1)))
+            )
+    if img is None or img.width() == 0:
+        if h <= 0:
+            h = w
+        painter.setPen(QPen(QColor("#FF5555"), 3, Qt.PenStyle.DashLine))
+        painter.setBrush(QBrush(QColor(255, 85, 85, 40)))
+        painter.drawRect(QRectF(-w / 2, -h / 2, w, h))
+        return
+    if h <= 0:
+        h = w * img.height() / img.width()
+    target = QRectF(-w / 2, -h / 2, w, h)
+    painter.drawImage(target, img)
+    tint = node.style.get("tint")
+    if is_color(tint) and qcolor(tint).alpha() > 0:
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceAtop)
+        painter.fillRect(target, qcolor(tint))
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+
+
 def _draw_group(painter: QPainter, node: NodeState, assets: AssetResolver | None, cache: ImageCache) -> None:
     return None
 
@@ -617,6 +656,7 @@ _DRAWERS: dict[str, Callable[[QPainter, NodeState, AssetResolver | None, ImageCa
     "callout": _draw_callout,
     "chart": _draw_chart,
     "formula": _draw_formula,
+    "image_sequence": _draw_image_sequence,
     "image": _draw_image,
     "group": _draw_group,
 }
@@ -665,6 +705,10 @@ def local_bounds(node: NodeState) -> QRectF:
     if k == "image":
         w = float(p.get("width", 300.0))
         h = float(p.get("height", 0.0) or 0.0) or w * 0.75
+        return QRectF(-w / 2, -h / 2, w, h)
+    if k == "image_sequence":
+        w = float(p.get("width", 400.0))
+        h = float(p.get("height", 0.0) or 0.0) or w
         return QRectF(-w / 2, -h / 2, w, h)
     return QRectF(-20, -20, 40, 40)
 

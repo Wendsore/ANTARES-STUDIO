@@ -4,13 +4,13 @@ Dernière mise à jour : 2026-10-21 (phases 0 à 6 réalisées sur Linux ; parco
 
 ## Situation réelle
 
-- **Phase active : 8 (suite : CSV, N-corps) et 9 (installateur, validation Windows réelle).** Phases 0 à 6 réalisées sur Linux ; phase 8 entamée (unités, Kepler analytique + numérique, modèle P3) ; phase 9 entamée (CLI, paquet PyInstaller autotesté sur Windows CI) ; phase 7 (Blender) non entamée.
-- Phases 0 à 6 : `DONE` sur Linux (gates prouvés par tests automatisés, voir journal ; Gate 5 = parcours P1 complet par l'interface, Gate 6 = crédits générés et scène « Crédits »). Validation Windows : CI `windows-latest` verte pour le cœur (47 tests, FFmpeg 9.0.2) sur PR #2 ; tests UI Windows à lire sur les PR #3, #4 et #5. Vidéo ≥ 2 min avec narration réelle : NON TESTÉ (fixtures synthétiques de quelques secondes).
+- **Phase active : 8 (suite : CSV, N-corps) et 9 (installateur, validation Windows réelle).** Phases 0 à 6 réalisées sur Linux ; phase 8 entamée (unités, Kepler analytique + numérique, modèle P3) ; phase 9 entamée (CLI, paquet PyInstaller autotesté sur Windows CI) ; phase 7 entamée (planète 3D procédurale par Blender facultatif, séquence d'images).
+- Phases 0 à 6 : `DONE` sur Linux (gates prouvés par tests automatisés, voir journal ; Gate 5 = parcours P1 complet par l'interface, Gate 6 = crédits générés et scène « Crédits »). Validation Windows : CI `windows-latest` verte pour le cœur (47 tests, FFmpeg 9.0.2) sur PR #2 ; tests UI Windows à lire sur les PR #3, #4 et #5. Vidéo ≥ 2 min : PROUVÉ sur Linux (démo 5 scènes, 126,00 s vidéo / 126,02 s audio, SRT fusionné, crédits ; `docs/session-logs/2026-10-21-export-complet.md`) avec une narration **synthétique** ; la voix réelle et la revue mobile restent au porteur.
 - **MVP candidat : non** (Gates 0–6 prouvés sur Linux ; le parcours P1 reste à reproduire sur Windows, R-005). **Logiciel utilisable : oui, en version de développement** (`antares-studio`) : nouveau projet avec modèles, édition visuelle (sélection, glisser, poignées, inspecteur, calques), 6 presets d'animation et images clés, timeline avec lecture, enregistrement/réouverture/autosave/récupération, export MP4 vérifié avec progression et annulation, narration (clips audio : décalage, gain, fondus, muet, forme d'onde), sous-titres (saisie, import/export SRT/VTT, incrustation à l'export + fichier `.srt` compagnon), provenance des ressources (fiche à l'import, inventaire, avertissements à l'export), crédits générés (`.credits.txt`, scène « Crédits »), avertissement d'échelle, métadonnées scientifiques et sources, favoris. Captures : `docs/images/editeur-phases-lune-2026-10-21.png`, `docs/images/narration-2026-10-21.png`, `docs/images/bibliotheque-provenance-2026-10-21.png`.
-- **Non disponible :** enregistrement micro (import de fichiers uniquement), packs d'icônes tiers (géométrie générative locale uniquement), matrices et morphing de formules, N-corps, histogrammes, 3D/Blender, installateur Windows (seul le dossier `.zip` PyInstaller existe).
-- **Tests exécutés :** 123 tests pytest verts sur Linux le 2026-10-21 (75 unitaires dont CLI, science et formules, 17 intégration export/audio, 28 interface dont le parcours P1 complet, 3 documentaires), ruff et mypy strict propres.
+- **Non disponible :** enregistrement micro (import de fichiers uniquement), packs d'icônes tiers (géométrie générative locale uniquement), matrices et morphing de formules, N-corps, histogrammes, import GLB/glTF et caméra 3D, installateur Windows (seul le dossier `.zip` PyInstaller existe).
+- **Tests exécutés :** 126 tests pytest verts sur Linux le 2026-10-21 (75 unitaires, 20 intégration export/audio/Blender, 28 interface dont le parcours P1 complet, 3 documentaires), ruff et mypy strict propres.
 - **Moteur retenu :** rendu Qt natif + FFmpeg (ADR-0001). **Licence du code :** non choisie (propriétaire).
-- **Git :** l'agent ne peut pas fusionner les PR (action refusée par la politique de l'environnement) ; les PR sont empilées : #2 (Phase 0), #3 (phases 1–4), #4 (phase 6), #5 (phase 5), #6 (phase 9 partielle), #7 (phase 8 partielle), #8 (équations), #9 (export complet), chacune basée sur la précédente. Le propriétaire fusionne dans l'ordre.
+- **Git :** l'agent ne peut pas fusionner les PR (action refusée par la politique de l'environnement) ; les PR sont empilées : #2 (Phase 0), #3 (phases 1–4), #4 (phase 6), #5 (phase 5), #6 (phase 9 partielle), #7 (phase 8 partielle), #8 (équations), #9 (export complet), #10 (phase 7 Blender), chacune basée sur la précédente. Le propriétaire fusionne dans l'ordre.
 
 ## Commandes
 
@@ -24,8 +24,8 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q
 ## Prochaines actions ordonnées
 
 1. Phase 9 : lire le job `windows-package` de la PR #6 (artefact `ANTARES-Studio-windows-x64.zip`), installation propre et parcours P1 sur Windows 11 par le propriétaire (R-005) ; installateur et signature si identité ; latence de scrubbing mesurée (p50 55 ms à 100 objets, `docs/session-logs/2026-10-21-phase9-packaging.md`).
-2. Gate 6 complet : vidéo ≥ 2 min avec narration réelle et revue mobile 16:9 (nécessite une voix off réelle du porteur).
-3. Phase 8 (suite) : N-corps simplifié, fonctions analytiques et histogrammes dans le graphique, matrices et écriture progressive des formules ; phase 7 Blender optionnel après décision propriétaire.
+2. Gate 6 : remplacer la narration synthétique de la démo (`scripts/demo_gate6.py`) par une voix off réelle et faire la revue mobile 16:9 (porteur).
+3. Phase 8 (suite) : N-corps simplifié, fonctions analytiques et histogrammes dans le graphique, matrices et écriture progressive des formules ; phase 7 (suite) : GLB/glTF, caméra, Eevee avec GPU.
 4. Décisions propriétaire : licence du produit et build FFmpeg (R-002), fusion des PR #2 → #5 (R-006).
 
 ## Journal des sessions
@@ -41,6 +41,7 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q
 | 2026-10-21 | Claude Code, Debian 13 (`ki`) | Phase 8 (partiel) : unités sourcées (IAU/CODATA), équation de Kepler, Verlet symplectique, preset et modèle « Orbite de Kepler », représentations §9.3 ; import CSV avec unités et objet Graphique (tracé progressif) | SCI-01…06 + Gate 8 (8 tests), CSV/graphique (6 tests) ; 116 pytest PASS, ruff, mypy | DONE (partiel, Linux) | PR #7 |
 | 2026-10-21 | Claude Code, Debian 13 (`ki`) | Équations : mini-langage analysé sans exécution, mise en page et rendu locaux (fractions, racines, indices, vecteurs), objet « Équation » | 4 tests formule ; 120 pytest PASS, ruff, mypy | DONE (Linux) | PR #8 |
 | 2026-10-21 | Claude Code, Debian 13 (`ki`) | Export de la vidéo complète : toutes les scènes enchaînées sans ré-encodage, audio homogène, SRT fusionné, crédits ; CLI `--all-scenes` | 3 tests d'intégration ; 123 pytest PASS, ruff, mypy | DONE (Linux) | PR #9 |
+| 2026-10-21 | Claude Code, Debian 13 (`ki`) | Phase 7 : adaptateur Blender (facultatif), planète procédurale rendue en séquence PNG, objet « Séquence d'images », dialogue avec progression | Gate 7 (3 tests, Blender 4.3.2 réel) ; 126 passed, ruff, mypy ; démo Gate 6 : 126 s, dérive 21 ms, décodage OK | DONE (minimal, Linux) ; Windows NON TESTÉ | PR #10 |
 
 ## Suivi des problèmes
 
