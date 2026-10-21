@@ -110,6 +110,30 @@ PRESETS: dict[str, PresetSpec] = {
                 PresetParam("start_angle_deg", "Angle de départ (°)", "float", 0.0),
             ),
         ),
+        PresetSpec(
+            "trace",
+            "Tracer la courbe",
+            "Dessine progressivement la courbe d'un graphique (progression 0 → 1).",
+            _COMMON + (_EASING,),
+        ),
+        PresetSpec(
+            "kepler",
+            "Orbite de Kepler (modélisation)",
+            "Ellipse képlérienne autour d'un corps placé au foyer (lois de Kepler, deux corps) ; "
+            "solution analytique ou intégration numérique (Verlet) avec contrôle de l'énergie.",
+            _COMMON
+            + (
+                PresetParam("focus_x", "Foyer X (px)", "float", 0.0),
+                PresetParam("focus_y", "Foyer Y (px)", "float", 0.0),
+                PresetParam("semi_major_px", "Demi-grand axe (px)", "float", 300.0, min=1),
+                PresetParam("eccentricity", "Excentricité (0 ≤ e < 1)", "float", 0.5, min=0.0, max=0.99),
+                PresetParam("periods", "Nombre de révolutions", "float", 1.0, min=0.01),
+                PresetParam("clockwise", "Sens horaire (à l'écran)", "bool", False),
+                PresetParam("periapsis_angle_deg", "Direction du périapse (°)", "float", 0.0),
+                PresetParam("samples_per_period", "Échantillons par révolution", "int", 72, min=8, max=720),
+                PresetParam("method", "Méthode", "choice", "analytique", choices=("analytique", "verlet")),
+            ),
+        ),
     )
 }
 
@@ -180,4 +204,40 @@ def apply_preset(preset_id: str, node: Node, params: dict[str, Any] | None = Non
             tx.set_keyframe(f, cx + r * math.cos(a), "linear")
             ty.set_keyframe(f, cy + r * math.sin(a), "linear")
         tracks += [tx, ty]
+    elif preset_id == "trace":
+        t = Track(node.id, "params.progress")
+        t.set_keyframe(start, 0.0, easing)
+        t.set_keyframe(end, 1.0, easing)
+        tracks.append(t)
+    elif preset_id == "kepler":
+        tracks += _kepler_tracks(node, p, start, dur)
     return tracks
+
+
+def _kepler_tracks(node: Node, p: dict[str, Any], start: int, dur: int) -> list[Track]:
+    """Positions en pixels depuis ``science.kepler`` : le temps de la vidéo est proportionnel au temps
+    physique (une révolution = ``dur / periods`` images) ; le foyer est fixe à l'écran."""
+    from antares_studio.science.kepler import OrbitElements, position_at, simulate_elements
+
+    a_px = float(p["semi_major_px"])
+    elements = OrbitElements(a_px, float(p["eccentricity"]), mu=1.0)  # unités d'écran : μ arbitraire
+    periods = float(p["periods"])
+    n = max(2, min(dur, int(round(int(p["samples_per_period"]) * periods))))
+    fx, fy = float(p["focus_x"]), float(p["focus_y"])
+    theta = math.radians(float(p["periapsis_angle_deg"]))
+    sign = 1.0 if bool(p["clockwise"]) else -1.0
+    total_t = periods * elements.period
+    if str(p["method"]) == "verlet":
+        sim = simulate_elements(elements, steps=max(n * 50, 1000), periods=periods)
+        samples = [sim.positions[int(round(i / n * (len(sim.positions) - 1)))] for i in range(n + 1)]
+    else:
+        samples = [position_at(elements, i / n * total_t) for i in range(n + 1)]
+    tx, ty = Track(node.id, "position.x"), Track(node.id, "position.y")
+    for i, (x, y) in enumerate(samples):
+        f = start + int(round(i / n * dur))
+        # repère écran : y vers le bas ; « sens horaire » inverse le sens de parcours
+        rx = x * math.cos(theta) - sign * y * math.sin(theta)
+        ry = x * math.sin(theta) + sign * y * math.cos(theta)
+        tx.set_keyframe(f, fx + rx, "linear")
+        ty.set_keyframe(f, fy + ry, "linear")
+    return [tx, ty]

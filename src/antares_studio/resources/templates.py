@@ -45,6 +45,11 @@ def scale_warning_node(canvas: Canvas, text: str = SCALE_WARNING_TEXT) -> Node:
         font_size=28 * k,
         padding=14 * k,
     )
+    if len(text) > 70:
+        # texte long : replié sur 85 % de la largeur et remonté ; la police de substitution de Windows
+        # (DejaVu absente) donne jusqu'à trois lignes, la boîte doit rester au-dessus de la bande (80 %)
+        node.params["max_width"] = canvas.width * 0.85
+        node.position[1] = canvas.height - 310 * k
     return node
 
 
@@ -218,9 +223,7 @@ def build_orbit_vectors(project: Project, scene: Scene) -> None:
     gravity = new_node("arrow", "Gravitation", 0.0, 0.0, end=[-120 * k, 0.0], head_size=22 * k)
     gravity.parent_id = planet.id
     gravity.style["stroke"] = "#EF5350"
-    legend = scale_warning_node(
-        c, "Orbite circulaire schématique, non à l'échelle — v (orange) tangent, g (rouge) vers l'astre"
-    )
+    legend = scale_warning_node(c, "Schéma non à l'échelle — v (orange) tangent, g (rouge) vers l'astre")
     for n in (path, star, planet, velocity, gravity, legend):
         scene.nodes.append(n)
     scene.tracks += apply_preset(
@@ -241,11 +244,90 @@ def build_orbit_vectors(project: Project, scene: Scene) -> None:
     project.scientific_metadata.update({"representation": "schematic", "to_scale": False})
 
 
+def build_kepler_orbit(project: Project, scene: Scene) -> None:
+    """Orbite de Kepler : étoile au foyer, trajectoire elliptique, planète (parcours P3, modélisation)."""
+    c = project.canvas
+    k = _scale(c)
+    cx, cy = c.width / 2, c.height / 2
+    a_px, e = 380 * k, 0.6
+    star = new_node("circle", "Étoile (foyer)", cx, cy, radius=50 * k, style_fill="#FFC857")
+    # l'ellipse est centrée à −a·e du foyer sur l'axe des apsides
+    path = new_node(
+        "ellipse",
+        "Trajectoire",
+        cx - a_px * e,
+        cy,
+        rx=a_px,
+        ry=a_px * (1 - e * e) ** 0.5,
+        style_fill="#00000000",
+        style_stroke="#FFFFFF40",
+        style_stroke_width=2 * k,
+        style_dash=True,
+    )
+    path.z_index = -1
+    planet = new_node("circle", "Planète", cx + a_px * (1 - e), cy, radius=18 * k, style_fill="#2677B8")
+    title = new_node(
+        "text",
+        "Titre",
+        cx,
+        100 * k,
+        text="Une orbite de Kepler : plus vite près de l'étoile",
+        font_size=52 * k,
+        bold=True,
+    )
+    note = scale_warning_node(
+        c,
+        f"Modélisation à deux corps (Kepler) : e = {e}, a = {a_px:.0f} px à l'écran, périapse à droite — "
+        "distances non à l'échelle",
+    )
+    for n in (path, star, planet, title, note):
+        scene.nodes.append(n)
+    scene.tracks += apply_preset(
+        "kepler",
+        planet,
+        {
+            "focus_x": cx,
+            "focus_y": cy,
+            "semi_major_px": a_px,
+            "eccentricity": e,
+            "duration_frames": scene.duration_frames,
+            "periods": 1.0,
+            "samples_per_period": 120,
+        },
+    )
+    scene.tracks += apply_preset("appear", title, {"duration_frames": max(1, scene.duration_frames // 10)})
+    project.scientific_metadata.update(
+        {
+            "representation": "model",
+            "to_scale": False,
+            "notes": "Problème à deux corps newtonien ; masse de la planète négligée ; solution analytique "
+            "de l'équation de Kepler (Newton–Raphson) ; le temps vidéo est proportionnel au temps physique.",
+            "parameters": {
+                "eccentricity": e,
+                "semi_major_axis_px": a_px,
+                "periods": 1.0,
+                "method": "analytique",
+            },
+            "sources": [
+                {
+                    "label": "JPL Solar System Dynamics — Keplerian elements and Kepler's equation",
+                    "url": "https://ssd.jpl.nasa.gov/planets/approx_pos.html",
+                },
+                {
+                    "label": "IAU 2015 B3 — constantes nominales (GM☉, GM⊕)",
+                    "url": "https://www.iau.org/static/resolutions/IAU2015_English.pdf",
+                },
+            ],
+        }
+    )
+
+
 TEMPLATES: dict[str, tuple[str, TemplateBuilder]] = {
     "intro": ("Introduction (titre et sous-titre)", build_intro),
     "moon_phases": ("Phases de la Lune (Soleil, Terre, Lune en orbite)", build_moon_phases),
     "scale_comparison": ("Comparaison d'échelles (année-lumière)", build_scale_comparison),
     "orbit_vectors": ("Orbite et vecteurs (vitesse, gravitation)", build_orbit_vectors),
+    "kepler_orbit": ("Orbite de Kepler (modélisation à deux corps)", build_kepler_orbit),
     "credits": ("Crédits (sources, ressources, logiciel)", build_credits),
 }
 

@@ -2,6 +2,15 @@
 
 Toutes les évolutions **effectives** (pas les intentions). Format : date, lot, changements observables.
 
+## [0.1.0.dev0] — 2026-10-21 — Phase 8 (partiel) : unités et orbites de Kepler
+
+- Module `science` : unités et constantes sourcées (ua IAU 2012, c et G CODATA, GM☉/GM⊕ IAU 2015, année-lumière, parsec), conversions avec contrôle de dimension et diagnostic des valeurs non finies.
+- Orbites képlériennes : solution analytique (équation de Kepler) et intégration numérique Verlet-vitesse avec suivi de l'énergie et garde de stabilité du pas ; comparaison numérique/analytique testée (ordre 2).
+- Nouveau preset **Orbite de Kepler** (foyer, demi-grand axe, excentricité, révolutions, méthode analytique ou numérique) et modèle **Orbite de Kepler (modélisation à deux corps)** avec hypothèses, paramètres et sources exportés dans le manifest.
+- Inspecteur : représentations schématique / modélisation / simulation numérique / données mesurées.
+- Import CSV avec unités (`Objet > Importer des données (CSV) en graphique…`) : séparateurs et virgule décimale détectés, diagnostics, refus explicite sans colonne numérique ; nouvel objet **Graphique** (axes avec unités, grille, titre, bornes, points, progression du tracé animable) et preset **Tracer la courbe**.
+- ADR-0004.
+
 ## [0.1.0.dev0] — 2026-10-21 — Phase 9 (partiel) : ligne de commande et paquet PyInstaller
 
 - `antares-studio --version`, `--selftest` (contrôle d'installation sans interface) et `--export PROJET SORTIE.mp4 [--profile] [--scene]`.

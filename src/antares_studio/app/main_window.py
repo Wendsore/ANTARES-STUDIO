@@ -251,6 +251,7 @@ class MainWindow(QMainWindow):
         m_add.addSeparator()
         m_add.addAction(self.act_scale_warning)
         m_add.addAction(self._action("Importer une &image…", self.import_image, "Ctrl+I"))
+        m_add.addAction(self._action("Importer des &données (CSV) en graphique…", self.import_data))
         m_anim = mb.addMenu("&Animation")
         from antares_studio.timeline.presets import PRESETS
 
@@ -699,6 +700,65 @@ class MainWindow(QMainWindow):
                 SetProperties(scene.id, node.id, {"params.asset_id": asset.id, "name": Path(path).stem})
             )
         edit_asset_provenance(self.document, asset, self)
+
+    def import_data(self) -> None:
+        """Importe un CSV (unités dans l'en-tête) et ajoute un graphique sur ses deux premières colonnes."""
+        scene = self.document.scene
+        if scene is None:
+            return
+        if self.document.paths is None:
+            QMessageBox.information(
+                self,
+                "Importer des données",
+                "Enregistrez d'abord le projet : le CSV sera copié dans assets/.",
+            )
+            if not self.save_project_as():
+                return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Importer des données", self.settings.last_directory(), "Données (*.csv *.tsv *.txt)"
+        )
+        if not path:
+            return
+        node = self.add_chart_from_csv(Path(path))
+        if node is not None:
+            asset = self.document.project.asset(str(node.params["data_asset_id"]))
+            if asset is not None:
+                edit_asset_provenance(self.document, asset, self)
+
+    def add_chart_from_csv(self, path: Path) -> Node | None:
+        from antares_studio.resources.assets import import_asset
+        from antares_studio.science.data import load_csv
+
+        scene = self.document.scene
+        if scene is None:
+            return None
+        try:
+            asset = import_asset(self.document, path, kind="data")
+            table = load_csv(path)
+        except (OSError, ValueError) as exc:
+            QMessageBox.critical(self, "Import impossible", str(exc))
+            return None
+        numeric = [c.name for c in table.columns if c.finite()]
+        x_name = numeric[0]
+        y_name = numeric[1] if len(numeric) > 1 else numeric[0]
+        node = self.add_node_of_kind("chart")
+        if node is not None:
+            self.document.push(
+                SetProperties(
+                    scene.id,
+                    node.id,
+                    {
+                        "params.data_asset_id": asset.id,
+                        "params.x_column": x_name,
+                        "params.y_column": y_name,
+                        "params.title": path.stem,
+                        "name": f"Graphique {path.stem}",
+                    },
+                )
+            )
+            if table.diagnostics:
+                self.statusBar().showMessage("CSV : " + " ; ".join(table.diagnostics), 8000)
+        return node
 
     def edit_asset_provenance(self, asset_id: str) -> None:
         asset = self.document.project.asset(asset_id)

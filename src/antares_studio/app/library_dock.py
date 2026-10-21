@@ -30,7 +30,8 @@ FAV_ROLE = (
 CATEGORIES: dict[str, tuple[str, ...]] = {
     "Formes": ("circle", "ellipse", "rect", "polygon", "star"),
     "Diagrammes": ("line", "arrow", "orbit_path"),
-    "Texte": ("text",),
+    "Texte": ("text", "callout"),
+    "Graphiques": ("chart",),
     "Images": ("image",),
     "Organisation": ("group",),
 }

@@ -181,7 +181,11 @@ class InspectorDock(QWidget):
         meta = self.document.project.scientific_metadata
         self.form.addRow(QLabel("<b>Métadonnées scientifiques</b>"))
         repr_box = QComboBox()
-        repr_box.addItem("Schématique", "schematic")
+        # distinction du master prompt §9.3 : schématique / modélisation / simulation / données mesurées
+        repr_box.addItem("Schématique (visuel arbitraire)", "schematic")
+        repr_box.addItem("Modélisation (hypothèses explicites)", "model")
+        repr_box.addItem("Simulation numérique (algorithme, pas, erreurs)", "simulation")
+        repr_box.addItem("Données mesurées (source, incertitude)", "data")
         repr_box.addItem("À l'échelle", "to_scale")
         repr_box.addItem("Mixte (préciser dans les notes)", "mixed")
         idx = repr_box.findData(str(meta.get("representation", "schematic")))
@@ -223,6 +227,22 @@ class InspectorDock(QWidget):
             button.setText(f"Sources… ({n})")
         except RuntimeError:  # bouton détruit par une reconstruction du formulaire
             self.sources_button = None
+
+    def _data_columns(self) -> list[str]:
+        """Noms de colonnes du CSV lié au graphique sélectionné (vide si aucune donnée)."""
+        scene = self.document.scene
+        node = scene.find_node(self._node_id) if scene and self._node_id else None
+        if node is None or node.kind != "chart":
+            return []
+        path = self.document.resolve_asset(str(node.params.get("data_asset_id", "")))
+        if path is None:
+            return []
+        from antares_studio.science.data import DataError, load_csv
+
+        try:
+            return [c.name for c in load_csv(path).columns]
+        except (DataError, OSError):
+            return []
 
     def _meta(self, key: str, value: Any) -> None:
         if self.document.project.scientific_metadata.get(key) == value:
@@ -317,12 +337,21 @@ class InspectorDock(QWidget):
             combo.addItem("Droite", "right")
             combo.currentIndexChanged.connect(lambda _i, p=path: self._commit(p, combo.currentData()))
             return combo
-        if path == "params.asset_id":
+        if path in ("params.asset_id", "params.data_asset_id"):
             combo = QComboBox()
-            combo.addItem("(aucune image)", "")
+            wanted = "data" if path == "params.data_asset_id" else "image"
+            combo.addItem("(aucune image)" if wanted == "image" else "(aucun fichier CSV)", "")
             for a in self.document.project.assets:
-                combo.addItem(a.path, a.id)
+                if a.kind == wanted:
+                    combo.addItem(a.path, a.id)
             combo.currentIndexChanged.connect(lambda _i, p=path: self._commit(p, combo.currentData()))
+            return combo
+        if path in ("params.x_column", "params.y_column"):
+            combo = QComboBox()
+            combo.setEditable(True)
+            for name in self._data_columns():
+                combo.addItem(name, name)
+            combo.currentTextChanged.connect(lambda text, p=path: self._commit(p, text))
             return combo
         if t == "points":
             lab = QLabel("(édition des sommets : version ultérieure)")
@@ -344,6 +373,15 @@ class InspectorDock(QWidget):
         if node is None:
             self.rebuild()
             return
+        if node.kind == "chart":
+            # les colonnes dépendent du CSV lié : reconstruire quand les données arrivent ou changent
+            combo = self._editors.get("params.x_column")
+            if isinstance(combo, QComboBox):
+                cols = self._data_columns()
+                current = [combo.itemText(i) for i in range(combo.count())]
+                if cols != current:
+                    self.rebuild()
+                    return
         try:
             st: NodeState | None = state.node(node.id)
         except KeyError:
@@ -418,7 +456,10 @@ class InspectorDock(QWidget):
                 editor.setPlainText(str(value or ""))
         elif isinstance(editor, QComboBox):
             idx = editor.findData(value)
-            editor.setCurrentIndex(max(0, idx))
+            if idx < 0 and editor.isEditable():
+                editor.setCurrentText(str(value or ""))
+            else:
+                editor.setCurrentIndex(max(0, idx))
         elif isinstance(editor, QLineEdit):
             editor.setText(str(value or ""))
         elif editor.property("xs") is not None and isinstance(value, list) and len(value) == 2:

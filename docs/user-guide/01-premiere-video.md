@@ -31,7 +31,7 @@ La scène contient déjà le Soleil, la Terre, l'orbite, la Lune animée sur un 
 ## 4. Animer sans programmer
 
 1. Sélectionnez un objet, puis onglet **Animations** de la Bibliothèque (ou menu `Animation`).
-2. Double-cliquez sur **Orbite schématique**, **Apparition**, **Translation**, **Rotation**, **Pulsation** ou **Disparition**.
+2. Double-cliquez sur **Orbite schématique**, **Orbite de Kepler** (ellipse autour d'un foyer, méthode analytique ou numérique), **Apparition**, **Translation**, **Rotation**, **Pulsation** ou **Disparition**.
 3. Réglez début, durée et paramètres (rayon, centre, nombre de tours, sens…) puis « Appliquer ».
 
 Pour une animation sur mesure : placez la tête de lecture, cliquez sur le losange ◆ à côté d'une propriété dans l'Inspecteur pour poser une **image clé**, déplacez-vous dans le temps, modifiez la valeur. Avec « Clé auto » (Timeline), chaque modification pose une clé.
@@ -57,6 +57,7 @@ Le son de l'éditeur est joué « au mieux » (il peut rester silencieux selon l
 - **Sources scientifiques** : sans objet sélectionné, l'inspecteur montre les **Métadonnées scientifiques** (représentation, à l'échelle, notes, bouton `Sources…`). Les sources apparaissent dans les crédits.
 - **Provenance des images et sons** : après chaque import, une fiche demande l'auteur, la source et la licence. « Plus tard » laisse la ressource en « provenance manquante » (visible dans l'onglet **Ressources** de la bibliothèque, double-clic pour compléter). À l'export, une ressource sans provenance ou non redistribuable est signalée.
 - **Crédits** : `Fichier > Inventaire des licences et crédits…` liste les ressources et le texte de crédits ; ce texte est écrit à côté de chaque vidéo exportée (`*.credits.txt`). Pour les afficher dans la vidéo, ajoutez le modèle **Crédits** depuis la bibliothèque (onglet Modèles).
+- **Données mesurées** : `Objet > Importer des données (CSV) en graphique…` lit un fichier dont l'en-tête porte les unités (`t (s);h (m)`), le copie dans le projet et crée un graphique (colonnes X/Y, bornes, points et titre dans l'inspecteur). L'animation **Tracer la courbe** dessine la courbe progressivement.
 - **Favoris** : cochez la case d'un objet, d'une animation ou d'un modèle ; le bouton ★ n'affiche que vos favoris.
 
 ## 8. Exporter la vidéo
