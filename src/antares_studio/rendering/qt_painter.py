@@ -27,6 +27,7 @@ from PySide6.QtGui import (
 
 from antares_studio.domain.colors import is_color, parse_color
 from antares_studio.domain.model import DEFAULT_SUBTITLE_STYLE, Canvas
+from antares_studio.rendering.formula_layout import formula_rect, paint_formula
 from antares_studio.science.data import DataError, DataTable, load_csv, nice_ticks
 from antares_studio.timeline.evaluator import NodeState, SceneState
 
@@ -446,6 +447,14 @@ def _draw_image(painter: QPainter, node: NodeState, assets: AssetResolver | None
             painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
 
 
+def _draw_formula(
+    painter: QPainter, node: NodeState, assets: AssetResolver | None, cache: ImageCache
+) -> None:
+    bg = node.style.get("background")
+    brush = QBrush(qcolor(bg)) if is_color(bg) and qcolor(bg).alpha() > 0 else None
+    paint_formula(painter, node.params, QPen(qcolor(node.style.get("fill", "#FFFFFF"))), brush)
+
+
 def chart_frame(params: dict[str, Any]) -> QRectF:
     w, h = float(params.get("width", 640.0)), float(params.get("height", 400.0))
     return QRectF(-w / 2, -h / 2, w, h)
@@ -607,6 +616,7 @@ _DRAWERS: dict[str, Callable[[QPainter, NodeState, AssetResolver | None, ImageCa
     "text": _draw_text,
     "callout": _draw_callout,
     "chart": _draw_chart,
+    "formula": _draw_formula,
     "image": _draw_image,
     "group": _draw_group,
 }
@@ -650,6 +660,8 @@ def local_bounds(node: NodeState) -> QRectF:
         return callout_rect(p)
     if k == "chart":
         return chart_frame(p)
+    if k == "formula":
+        return formula_rect(p)
     if k == "image":
         w = float(p.get("width", 300.0))
         h = float(p.get("height", 0.0) or 0.0) or w * 0.75

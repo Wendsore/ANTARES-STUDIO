@@ -167,6 +167,20 @@ KINDS: dict[str, KindSpec] = {
             style=(ParamSpec("tint", "color", "#FFFFFF00", animatable=True, label="Teinte"),),
         ),
         KindSpec(
+            "formula",
+            "Équation (formule)",
+            params=(
+                ParamSpec("text", "str", "E = m c^{2}", False, "Formule"),
+                ParamSpec("font_family", "str", "DejaVu Sans", False, "Police"),
+                ParamSpec("font_size", "float", 56.0, True, "Taille", min=1),
+                ParamSpec("italic", "bool", True, False, "Variables en italique"),
+            ),
+            style=(
+                ParamSpec("fill", "color", "#FFFFFF", animatable=True, label="Couleur"),
+                ParamSpec("background", "color", "#00000000", animatable=True, label="Fond"),
+            ),
+        ),
+        KindSpec(
             "chart",
             "Graphique (courbe de données)",
             params=(
