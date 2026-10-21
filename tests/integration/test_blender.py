@@ -1,4 +1,4 @@
-"""Gate 7 — planète 3D rendue par Blender (facultatif) intégrée à une scène 2D avec audio ; absence tolérée."""
+"""Gate 7 — planète 3D rendue par Blender (facultatif) dans une scène 2D avec audio ; absence tolérée."""
 
 from __future__ import annotations
 

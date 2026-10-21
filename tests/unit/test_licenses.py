@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from antares_studio.domain.commands import SetAssetLicense, SetProjectMetadata, UndoStack
-from antares_studio.domain.model import Asset, AssetLicense, Canvas
+from antares_studio.domain.model import Asset, AssetLicense, Canvas, Scene
 from antares_studio.persistence.schema import project_from_dict, project_to_dict
 from antares_studio.rendering.plan import build_render_plan
 from antares_studio.rendering.qt_painter import callout_rect, render_state_to_image
@@ -163,3 +163,15 @@ def test_sci08_sources_are_in_metadata_and_manifest_credits() -> None:
     sources = project.scientific_metadata["sources"]
     assert len(sources) == 2 and all(s["url"].startswith("https://") for s in sources)
     assert any("IAU 2012" in line for line in credits_lines(project))
+
+
+def test_sci08_templates_accumulate_sources_across_scenes() -> None:
+    """Régression : chaque modèle ajouté écrasait la liste des sources (le dernier gagnait)."""
+    project = create_project("Démo", Canvas(), "moon_phases", 2)
+    for template_id in ("scale_comparison", "kepler_orbit", "moon_phases"):
+        scene = Scene.create(template_id, 60)
+        TEMPLATES[template_id][1](project, scene)
+        project.scenes.append(scene)
+    labels = [src["label"] for src in project.scientific_metadata["sources"]]
+    assert len(labels) == len(set(labels)) == 5  # Lune, IAU au, CODATA c, JPL, IAU GM — sans doublon
+    assert any("Moon" in label for label in labels) and any("IAU 2015" in label for label in labels)

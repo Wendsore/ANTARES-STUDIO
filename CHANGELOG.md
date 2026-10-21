@@ -6,6 +6,8 @@ Toutes les évolutions **effectives** (pas les intentions). Format : date, lot, 
 
 - `Objet > Planète 3D (Blender, facultatif)…` : si Blender est installé, rend une planète procédurale en rotation (Cycles CPU, fond transparent) en séquence PNG dans le projet et l'insère comme objet **Séquence d'images** animé sur la durée de la scène ; progression, annulation, messages explicites. Sans Blender : diagnostic et aucune fonction 2D affectée.
 - Nouvel objet **Séquence d'images (rendu 3D)** (dossier de ressources, index d'image animable, boucle).
+- `scripts/demo_gate6.py` : construit et exporte une démonstration de 5 scènes (126 s) pour la preuve Gate 6 ; narration synthétique déclarée comme telle.
+- Correctif : les modèles accumulent leurs sources scientifiques au lieu d'écraser celles des scènes précédentes.
 
 ## [0.1.0.dev0] — 2026-10-21 — Export de la vidéo complète
 

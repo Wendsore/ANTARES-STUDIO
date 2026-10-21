@@ -122,8 +122,8 @@ class BlenderPlanetDialog(QDialog):
         blender = find_blender()
         if blender is None:
             self.info = QLabel(
-                "Blender est introuvable. Installez-le (https://www.blender.org, GPL) ou indiquez son chemin via "
-                "la variable ANTARES_BLENDER. Toutes les fonctions 2D restent disponibles sans Blender."
+                "Blender est introuvable. Installez-le (https://www.blender.org, GPL) ou indiquez son chemin "
+                "via la variable ANTARES_BLENDER. Toutes les fonctions 2D restent disponibles sans Blender."
             )
         else:
             self.info = QLabel(f"Blender détecté : {blender_version(blender)}")
