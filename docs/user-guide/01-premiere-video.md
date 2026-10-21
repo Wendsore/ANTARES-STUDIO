@@ -63,7 +63,7 @@ Le son de l'éditeur est joué « au mieux » (il peut rester silencieux selon l
 
 ## 8. Exporter la vidéo
 
-`Fichier > Exporter la vidéo…` (Ctrl+E) : choisissez **Final 1080p** (ou **Brouillon 720p** pour vérifier rapidement), le fichier de sortie, puis « Exporter ». La progression s'affiche ; « Annuler l'export » arrête proprement sans laisser de fichier partiel. À la fin, le fichier est vérifié (résolution, cadence, nombre d'images, piste audio) et un `*.manifest.json` décrit le rendu. Les sous-titres sont incrustés dans l'image et aussi écrits dans un fichier `.srt` à côté de la vidéo ; les crédits dans un fichier `.credits.txt`.
+`Fichier > Exporter la vidéo…` (Ctrl+E) : choisissez **Final 1080p** (ou **Brouillon 720p** pour vérifier rapidement), cochez **Toutes les scènes à la suite** pour la vidéo complète (sinon seule la scène courante est exportée), le fichier de sortie, puis « Exporter ». La progression s'affiche ; « Annuler l'export » arrête proprement sans laisser de fichier partiel. À la fin, le fichier est vérifié (résolution, cadence, nombre d'images, piste audio) et un `*.manifest.json` décrit le rendu. Les sous-titres sont incrustés dans l'image et aussi écrits dans un fichier `.srt` à côté de la vidéo ; les crédits dans un fichier `.credits.txt`.
 
 FFmpeg doit être installé (`Aide > Diagnostics…` l'indique ; `Aide > Chemin de FFmpeg…` permet de le désigner manuellement).
 

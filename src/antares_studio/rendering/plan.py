@@ -80,6 +80,7 @@ class RenderPlan:
     software_version: str = __version__
     tool_versions: dict[str, str] = field(default_factory=dict)
     warnings: tuple[str, ...] = ()
+    silent_audio: bool = False  # piste stéréo silencieuse si aucun clip (enchaînement de scènes homogène)
 
     @property
     def total_frames(self) -> int:
@@ -110,6 +111,7 @@ def build_render_plan(
     audio: tuple[AudioClipPlan, ...] = (),
     subtitles_path: str | None = None,
     tool_versions: dict[str, str] | None = None,
+    silent_audio: bool = False,
 ) -> RenderPlan:
     scene = project.scene(scene_id)
     profile = PROFILES[profile_id]
@@ -139,4 +141,5 @@ def build_render_plan(
         subtitles_path=subtitles_path,
         tool_versions=dict(tool_versions or {}),
         warnings=tuple(warnings),
+        silent_audio=silent_audio,
     )
