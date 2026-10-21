@@ -21,7 +21,8 @@
 
 - Bundle Linux : `python packaging/build.py --check` → 248 Mo, 496 fichiers ; `--version` et `--selftest` du binaire **RÉUSSIS** (export 10 images 720p en 0,6 s).
 - Scrubbing, 100 objets / 160 pistes, 120 images : vue 1280×720 — évaluation p50 2,9 ms, dessin p50 51,7 ms, total p50 54,6 ms, p95 74,8 ms ; export 1920×1080 — total p50 96 ms, p95 135 ms. Conclusion : scrubbing fluide (~15 im/s) sur un projet lourd ; le dessin domine (piste d'optimisation : cache des mises en page de texte).
-- Tests : `tests/unit/test_cli.py` (4 tests) verts ; suite complète NON RELANCÉE après ce lot (limite de session atteinte) — à lire sur la CI de la PR #6.
+- Tests : `tests/unit/test_cli.py` (4 tests) ; suite complète 102 tests verts (0 ignoré), ruff et mypy propres.
+- CI `windows-package` (PR #6) : `.exe` construit par PyInstaller 6.22.3, `--version` et `--selftest` RÉUSSIS, export de 30 images depuis le binaire RÉUSSI.
 
 Windows 11 : NON TESTÉ localement ; le job `windows-package` de la PR #6 construit et autoteste le `.exe`.
 
