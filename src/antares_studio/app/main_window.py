@@ -608,6 +608,7 @@ class MainWindow(QMainWindow):
         document.frameChanged.connect(lambda _f: tv.update())
         document.frameChanged.connect(self.timeline._on_frame)
         document.changed.connect(self.timeline._update_scroll)
+        document.changed.connect(self.timeline._sync_easing)
         document.sceneChanged.connect(lambda _s: self.timeline._update_scroll())
         document.changed.connect(self.timeline.load_waveforms)
         document.sceneChanged.connect(lambda _s: self.timeline.load_waveforms())
@@ -978,32 +979,36 @@ class MainWindow(QMainWindow):
         scene = self.document.scene
         if scene is None:
             return
-        for nid in self.document.selection:
-            if scene.find_node(nid) is not None:
-                self.document.push(RemoveNode(scene.id, nid))
-        self.document.set_selection([])
+        with self.document.macro("Supprimer la sélection"):
+            for nid in self.document.selection:
+                if scene.find_node(nid) is not None:
+                    self.document.push(RemoveNode(scene.id, nid))
+            self.document.set_selection([])
 
     def duplicate_selection(self) -> None:
         scene = self.document.scene
         if scene is None:
             return
-        new_ids = []
-        for nid in self.document.selection:
-            node = scene.find_node(nid)
-            if node is None:
-                continue
-            clone = copy.deepcopy(node)
-            clone.id = new_id("node")
-            clone.name = node.name + " (copie)"
-            clone.position = [node.position[0] + 20, node.position[1] + 20]
-            self.document.push(AddNode(scene.id, clone))
-            tracks = [copy.deepcopy(t) for t in scene.tracks_for(nid)]
-            for t in tracks:
-                t.target_id = clone.id
-            if tracks:
-                self.document.push(ReplaceTracks(scene.id, clone.id, tracks, label="Dupliquer l'animation"))
-            new_ids.append(clone.id)
-        self.document.set_selection(new_ids)
+        with self.document.macro("Dupliquer"):
+            new_ids = []
+            for nid in self.document.selection:
+                node = scene.find_node(nid)
+                if node is None:
+                    continue
+                clone = copy.deepcopy(node)
+                clone.id = new_id("node")
+                clone.name = node.name + " (copie)"
+                clone.position = [node.position[0] + 20, node.position[1] + 20]
+                self.document.push(AddNode(scene.id, clone))
+                tracks = [copy.deepcopy(t) for t in scene.tracks_for(nid)]
+                for t in tracks:
+                    t.target_id = clone.id
+                if tracks:
+                    self.document.push(
+                        ReplaceTracks(scene.id, clone.id, tracks, label="Dupliquer l'animation")
+                    )
+                new_ids.append(clone.id)
+            self.document.set_selection(new_ids)
 
     def select_all(self) -> None:
         scene = self.document.scene
@@ -1015,47 +1020,49 @@ class MainWindow(QMainWindow):
         sel = self.document.selected_nodes
         if scene is None or not sel:
             return
-        xs = [n.position[0] for n in sel]
-        ys = [n.position[1] for n in sel]
-        gx, gy = sum(xs) / len(xs), sum(ys) / len(ys)
-        group = Node.create("group", "Groupe", position=[gx, gy])
-        self.document.push(AddNode(scene.id, group, index=min(scene.nodes.index(n) for n in sel)))
-        for n in sel:
-            if n.parent_id is None:
-                self.document.push(
-                    SetProperties(
-                        scene.id,
-                        n.id,
-                        {
-                            "parent_id": group.id,
-                            "position.x": n.position[0] - gx,
-                            "position.y": n.position[1] - gy,
-                        },
-                        label="Grouper",
+        with self.document.macro("Grouper"):
+            xs = [n.position[0] for n in sel]
+            ys = [n.position[1] for n in sel]
+            gx, gy = sum(xs) / len(xs), sum(ys) / len(ys)
+            group = Node.create("group", "Groupe", position=[gx, gy])
+            self.document.push(AddNode(scene.id, group, index=min(scene.nodes.index(n) for n in sel)))
+            for n in sel:
+                if n.parent_id is None:
+                    self.document.push(
+                        SetProperties(
+                            scene.id,
+                            n.id,
+                            {
+                                "parent_id": group.id,
+                                "position.x": n.position[0] - gx,
+                                "position.y": n.position[1] - gy,
+                            },
+                            label="Grouper",
+                        )
                     )
-                )
-        self.document.set_selection([group.id])
+            self.document.set_selection([group.id])
 
     def ungroup_selection(self) -> None:
         scene = self.document.scene
         if scene is None:
             return
-        for g in [n for n in self.document.selected_nodes if n.kind == "group"]:
-            for child in scene.children_of(g.id):
-                self.document.push(
-                    SetProperties(
-                        scene.id,
-                        child.id,
-                        {
-                            "parent_id": g.parent_id,
-                            "position.x": child.position[0] + g.position[0],
-                            "position.y": child.position[1] + g.position[1],
-                        },
-                        label="Dégrouper",
+        with self.document.macro("Dégrouper"):
+            for g in [n for n in self.document.selected_nodes if n.kind == "group"]:
+                for child in scene.children_of(g.id):
+                    self.document.push(
+                        SetProperties(
+                            scene.id,
+                            child.id,
+                            {
+                                "parent_id": g.parent_id,
+                                "position.x": child.position[0] + g.position[0],
+                                "position.y": child.position[1] + g.position[1],
+                            },
+                            label="Dégrouper",
+                        )
                     )
-                )
-            self.document.push(RemoveNode(scene.id, g.id))
-        self.document.set_selection([])
+                self.document.push(RemoveNode(scene.id, g.id))
+            self.document.set_selection([])
 
     def _edit_text_inline(self, node_id: str) -> None:
         scene = self.document.scene

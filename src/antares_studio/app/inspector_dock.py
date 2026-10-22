@@ -81,6 +81,40 @@ class ColorButton(QPushButton):
                 cb(self._value)
 
 
+def common_properties(nodes: list[Node]) -> list[tuple[str, str, ParamSpec]]:
+    """Propriétés éditables ensemble : transformation, apparence, puis paramètres et style partagés.
+
+    Un paramètre de style ou de paramétrage est commun s'il existe, avec le même type, dans le catalogue
+    de chacun des types d'objets sélectionnés (ex. « Remplissage » d'un cercle et d'un rectangle).
+    """
+    out: list[tuple[str, str, ParamSpec]] = [
+        ("rotation_deg", BASE_LABELS["rotation_deg"], ParamSpec("r", "float", 0.0)),
+        ("scale.x", BASE_LABELS["scale.x"], ParamSpec("sx", "float", 1.0, min=0.01)),
+        ("scale.y", BASE_LABELS["scale.y"], ParamSpec("sy", "float", 1.0, min=0.01)),
+        ("opacity", BASE_LABELS["opacity"], ParamSpec("o", "float", 1.0, min=0.0, max=1.0)),
+        ("z_index", "Ordre (plan)", ParamSpec("z", "int", 0)),
+        ("visible", BASE_LABELS["visible"], ParamSpec("v", "bool", True)),
+        ("locked", "Verrouillé", ParamSpec("l", "bool", False)),
+    ]
+    specs = [KINDS[n.kind] for n in nodes if n.kind in KINDS]
+    if not specs or len(specs) != len(nodes):
+        return out
+    for group in ("style", "params"):
+        first = specs[0].style if group == "style" else specs[0].params
+        for ps in first:
+            if ps.type not in ("float", "int", "bool", "color"):
+                continue
+            if all(
+                any(
+                    o.name == ps.name and o.type == ps.type
+                    for o in (s.style if group == "style" else s.params)
+                )
+                for s in specs[1:]
+            ):
+                out.append((f"{group}.{ps.name}", ps.label or ps.name, ps))
+    return out
+
+
 class InspectorDock(QWidget):
     def __init__(self, document: ProjectDocument, parent: QWidget | None = None):
         super().__init__(parent)
@@ -88,6 +122,8 @@ class InspectorDock(QWidget):
         self._editors: dict[str, QWidget] = {}
         self._key_buttons: dict[str, QToolButton] = {}
         self._node_id: str | None = None
+        self._multi_ids: list[str] = []  # sélection multiple : édition commune
+        self._mixed_labels: dict[str, QLabel] = {}
         self._updating = False
         self.sources_button: QPushButton | None = None
         outer = QVBoxLayout(self)
@@ -111,6 +147,8 @@ class InspectorDock(QWidget):
             self.form.removeRow(0)
         self._editors.clear()
         self._key_buttons.clear()
+        self._mixed_labels.clear()
+        self._multi_ids = []
 
     def rebuild(self) -> None:
         self._clear()
@@ -120,7 +158,10 @@ class InspectorDock(QWidget):
             return
         if len(sel) != 1:
             self._node_id = None
-            self._build_scene_form(sel)
+            if len(sel) > 1:
+                self._build_multi_form(sel)
+            else:
+                self._build_scene_form(sel)
             return
         node = sel[0]
         self._node_id = node.id
@@ -150,15 +191,57 @@ class InspectorDock(QWidget):
                     self._add_editor(f"style.{ps.name}", ps.label or ps.name, ps, node)
         self.refresh_values()
 
+    def _build_multi_form(self, sel: list[Node]) -> None:
+        """Propriétés communes à tous les objets sélectionnés ; une modification s'applique à chacun."""
+        self._multi_ids = [n.id for n in sel]
+        self.form.addRow(QLabel(f"<b>{len(sel)} objets sélectionnés</b>"))
+        hint = QLabel(
+            "Les modifications s'appliquent à tous (un seul Ctrl+Z les annule). « ≠ » : valeurs différentes."
+        )
+        hint.setWordWrap(True)
+        hint.setProperty("role", "hint")
+        self.form.addRow(hint)
+        for path, label, spec in common_properties(sel):
+            editor = self._make_editor(path, spec)
+            mixed = QLabel("")
+            mixed.setToolTip("Les objets sélectionnés ont des valeurs différentes")
+            row = QWidget()
+            lay = QHBoxLayout(row)
+            lay.setContentsMargins(0, 0, 0, 0)
+            lay.addWidget(editor, 1)
+            lay.addWidget(mixed)
+            self._editors[path] = editor
+            self._mixed_labels[path] = mixed
+            self.form.addRow(label + " :", row)
+        self.refresh_values()
+
+    def _refresh_multi(self) -> None:
+        scene = self.document.scene
+        state = self.document.state()
+        if scene is None or state is None:
+            return
+        nodes = [n for n in (scene.find_node(i) for i in self._multi_ids) if n is not None]
+        if len(nodes) != len(self._multi_ids):
+            self.rebuild()
+            return
+        self._updating = True
+        try:
+            for path, editor in self._editors.items():
+                values = []
+                for n in nodes:
+                    try:
+                        st: NodeState | None = state.node(n.id)
+                    except KeyError:
+                        st = None
+                    values.append(self._current_value(n, st, path))
+                self._set_editor(editor, values[0])
+                self._mixed_labels[path].setText("≠" if any(v != values[0] for v in values) else "")
+        finally:
+            self._updating = False
+
     def _build_scene_form(self, sel: list[Node]) -> None:
         scene = self.document.scene
         if scene is None:
-            return
-        if len(sel) > 1:
-            self.form.addRow(QLabel(f"<b>{len(sel)} objets sélectionnés</b>"))
-            self.form.addRow(
-                QLabel("Déplacez-les ensemble sur le canevas ; l'inspecteur détaille un objet à la fois.")
-            )
             return
         self.form.addRow(QLabel(f"<b>Scène : {scene.name}</b>"))
         name = QLineEdit(scene.name)
@@ -374,6 +457,9 @@ class InspectorDock(QWidget):
 
     # --- synchronisation --------------------------------------------------
     def refresh_values(self) -> None:
+        if self._multi_ids:
+            self._refresh_multi()
+            return
         if self._node_id is None:
             self._refresh_metadata()
             return
@@ -479,10 +565,21 @@ class InspectorDock(QWidget):
             editor.property("ys").setValue(float(value[1]))
 
     def _commit(self, path: str, value: Any) -> None:
-        if self._updating or self._node_id is None:
+        if self._updating:
             return
         scene = self.document.scene
         if scene is None:
+            return
+        if self._multi_ids:
+            try:
+                with self.document.macro(f"Modifier {len(self._multi_ids)} objets"):
+                    for nid in self._multi_ids:
+                        if scene.find_node(nid) is not None:
+                            self.document.set_node_property(nid, path, value)
+            except ValueError:
+                self.refresh_values()
+            return
+        if self._node_id is None:
             return
         node = scene.find_node(self._node_id)
         if node is None:

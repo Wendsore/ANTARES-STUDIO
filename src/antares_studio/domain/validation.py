@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from antares_studio.domain.colors import is_color
 from antares_studio.domain.ids import is_valid_id
 from antares_studio.domain.kinds import KINDS, check_param_value, spec_for
-from antares_studio.domain.model import EASINGS, Project, Scene
+from antares_studio.domain.model import AUDIO_ROLES, EASINGS, TRANSITIONS, Project, Scene
 from antares_studio.domain.properties import check_property_value, is_animatable
 
 
@@ -132,6 +132,25 @@ def validate_scene(scene: Scene, prefix: str = "scene") -> list[ValidationIssue]
             v = getattr(clip, attr)
             if not is_finite_number(v) or v < 0:
                 issues.append(ValidationIssue(f"{cp}.{attr}", "durée de fondu >= 0 attendue"))
+        if clip.role not in AUDIO_ROLES:
+            issues.append(ValidationIssue(f"{cp}.role", f"rôle inconnu : {clip.role}"))
+    seen_marker: set[str] = set()
+    for mi, marker in enumerate(scene.markers):
+        mp = f"{prefix}.markers[{mi}]"
+        if not is_valid_id(marker.id) or marker.id in seen_marker:
+            issues.append(ValidationIssue(f"{mp}.id", "identifiant de repère invalide ou dupliqué"))
+        seen_marker.add(marker.id)
+        if not isinstance(marker.frame, int) or isinstance(marker.frame, bool) or marker.frame < 0:
+            issues.append(ValidationIssue(f"{mp}.frame", "image entière >= 0 attendue"))
+    tr = scene.transition
+    if tr.kind not in TRANSITIONS:
+        issues.append(ValidationIssue(f"{prefix}.transition.kind", f"transition inconnue : {tr.kind}"))
+    if (
+        not isinstance(tr.duration_frames, int)
+        or isinstance(tr.duration_frames, bool)
+        or tr.duration_frames < 1
+    ):
+        issues.append(ValidationIssue(f"{prefix}.transition.duration_frames", "durée entière >= 1 attendue"))
     seen_sub: set[str] = set()
     for si2, sub in enumerate(scene.subtitles):
         sp = f"{prefix}.subtitles[{si2}]"
@@ -157,6 +176,14 @@ def validate_scene(scene: Scene, prefix: str = "scene") -> list[ValidationIssue]
                 issues.append(ValidationIssue(f"{kp}.frame", "frame entière >= 0 attendue"))
             if kf.easing not in EASINGS:
                 issues.append(ValidationIssue(f"{kp}.easing", f"interpolation inconnue : {kf.easing}"))
+            if kf.bezier is not None and (
+                len(kf.bezier) != 4
+                or not all(is_finite_number(v) for v in kf.bezier)
+                or not (0.0 <= kf.bezier[0] <= 1.0 and 0.0 <= kf.bezier[2] <= 1.0)
+            ):
+                issues.append(
+                    ValidationIssue(f"{kp}.bezier", "x1, y1, x2, y2 attendus avec x1 et x2 dans [0, 1]")
+                )
             err = check_property_value(node, track.property, kf.value)
             if err:
                 issues.append(ValidationIssue(f"{kp}.value", err))

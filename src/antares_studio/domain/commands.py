@@ -11,9 +11,11 @@ from antares_studio.domain.model import (
     AssetLicense,
     AudioClip,
     Keyframe,
+    Marker,
     Node,
     Project,
     Scene,
+    SceneTransition,
     Subtitle,
     Track,
 )
@@ -137,14 +139,20 @@ class SetProperties:
         return True
 
 
+def _restore_keyframe(track: Track, kf: Keyframe) -> None:
+    track.set_keyframe(kf.frame, kf.value, kf.easing, kf.bezier)
+
+
 @dataclass
 class SetKeyframe:
+    """Pose une clé. ``easing=None`` : une clé existante garde son interpolation (sinon « linear »)."""
+
     scene_id: str
     node_id: str
     path: str
     frame: int
     value: Any
-    easing: str = "linear"
+    easing: str | None = None
     label: str = "Poser une image clé"
     _old: Keyframe | None = field(default=None, repr=False)
     _track_created: bool = field(default=False, repr=False)
@@ -157,7 +165,11 @@ class SetKeyframe:
             self._track_created = True
         existing = next((k for k in track.keyframes if k.frame == self.frame), None)
         self._old = copy.deepcopy(existing) if existing else None
-        track.set_keyframe(self.frame, copy.deepcopy(self.value), self.easing)
+        if self.easing is None and existing is not None:
+            easing, bezier = existing.easing, copy.deepcopy(existing.bezier)
+        else:
+            easing, bezier = self.easing or "linear", None
+        track.set_keyframe(self.frame, copy.deepcopy(self.value), easing, bezier)
 
     def undo(self, project: Project) -> None:
         scene = project.scene(self.scene_id)
@@ -166,7 +178,7 @@ class SetKeyframe:
             return
         track.remove_keyframe(self.frame)
         if self._old is not None:
-            track.set_keyframe(self._old.frame, self._old.value, self._old.easing)
+            _restore_keyframe(track, self._old)
         if self._track_created:
             scene.tracks = [t for t in scene.tracks if t is not track]
 
@@ -204,7 +216,36 @@ class RemoveKeyframe:
         if self._old is None:
             return
         track = project.scene(self.scene_id).ensure_track(self.node_id, self.path)
-        track.set_keyframe(self._old.frame, self._old.value, self._old.easing)
+        _restore_keyframe(track, self._old)
+
+
+@dataclass
+class SetKeyframeEasing:
+    """Change l'interpolation qui part d'une clé (segment vers la clé suivante)."""
+
+    scene_id: str
+    node_id: str
+    path: str
+    frame: int
+    easing: str
+    bezier: list[float] | None = None
+    label: str = "Modifier l'interpolation"
+    _old: tuple[str, list[float] | None] | None = field(default=None, repr=False)
+
+    def do(self, project: Project) -> None:
+        track = project.scene(self.scene_id).track_for(self.node_id, self.path)
+        kf = next((k for k in track.keyframes if k.frame == self.frame), None) if track else None
+        if kf is None:
+            raise KeyError(f"aucune image clé à l'image {self.frame}")
+        self._old = (kf.easing, copy.deepcopy(kf.bezier))
+        kf.easing = self.easing
+        kf.bezier = list(self.bezier) if self.easing == "bezier" and self.bezier is not None else None
+
+    def undo(self, project: Project) -> None:
+        track = project.scene(self.scene_id).track_for(self.node_id, self.path)
+        kf = next((k for k in track.keyframes if k.frame == self.frame), None) if track else None
+        if kf is not None and self._old is not None:
+            kf.easing, kf.bezier = self._old[0], copy.deepcopy(self._old[1])
 
 
 @dataclass
@@ -237,7 +278,7 @@ class MoveKeyframe:
         if kf is not None:
             kf.frame = self.frame
         if self._displaced is not None:
-            track.set_keyframe(self._displaced.frame, self._displaced.value, self._displaced.easing)
+            _restore_keyframe(track, self._displaced)
         track.keyframes.sort(key=lambda k: k.frame)
 
 
@@ -309,20 +350,82 @@ class ReorderNode:
 @dataclass
 class SetSceneProperty:
     scene_id: str
-    attr: str  # name | duration_frames | background
+    attr: str  # name | duration_frames | background | transition
     value: Any
     label: str = "Modifier la scène"
     _old: Any = field(default=None, repr=False)
 
     def do(self, project: Project) -> None:
         scene = project.scene(self.scene_id)
-        if self.attr not in ("name", "duration_frames", "background"):
+        if self.attr not in ("name", "duration_frames", "background", "transition"):
             raise KeyError(self.attr)
-        self._old = getattr(scene, self.attr)
-        setattr(scene, self.attr, self.value)
+        if self.attr == "transition" and not isinstance(self.value, SceneTransition):
+            raise TypeError("transition : SceneTransition attendue")
+        self._old = copy.deepcopy(getattr(scene, self.attr))
+        setattr(scene, self.attr, copy.deepcopy(self.value))
 
     def undo(self, project: Project) -> None:
-        setattr(project.scene(self.scene_id), self.attr, self._old)
+        setattr(project.scene(self.scene_id), self.attr, copy.deepcopy(self._old))
+
+
+@dataclass
+class AddMarker:
+    scene_id: str
+    marker: Marker
+    label: str = "Ajouter un repère"
+
+    def do(self, project: Project) -> None:
+        project.scene(self.scene_id).markers.append(copy.deepcopy(self.marker))
+
+    def undo(self, project: Project) -> None:
+        scene = project.scene(self.scene_id)
+        scene.markers = [m for m in scene.markers if m.id != self.marker.id]
+
+
+@dataclass
+class RemoveMarker:
+    scene_id: str
+    marker_id: str
+    label: str = "Supprimer un repère"
+    _old: tuple[int, Marker] | None = field(default=None, repr=False)
+
+    def do(self, project: Project) -> None:
+        scene = project.scene(self.scene_id)
+        for i, m in enumerate(scene.markers):
+            if m.id == self.marker_id:
+                self._old = (i, m)
+                del scene.markers[i]
+                return
+
+    def undo(self, project: Project) -> None:
+        if self._old is not None:
+            i, m = self._old
+            scene = project.scene(self.scene_id)
+            scene.markers.insert(min(i, len(scene.markers)), m)
+
+
+@dataclass
+class SetMarkerAttr:
+    scene_id: str
+    marker_id: str
+    attr: str  # frame | label
+    value: Any
+    label: str = "Modifier un repère"
+    _old: Any = field(default=None, repr=False)
+
+    def do(self, project: Project) -> None:
+        if self.attr not in ("frame", "label"):
+            raise KeyError(self.attr)
+        marker = next((m for m in project.scene(self.scene_id).markers if m.id == self.marker_id), None)
+        if marker is None:
+            raise KeyError(self.marker_id)
+        self._old = getattr(marker, self.attr)
+        setattr(marker, self.attr, self.value)
+
+    def undo(self, project: Project) -> None:
+        marker = next((m for m in project.scene(self.scene_id).markers if m.id == self.marker_id), None)
+        if marker is not None:
+            setattr(marker, self.attr, self._old)
 
 
 @dataclass
@@ -360,8 +463,28 @@ class RemoveScene:
             project.scenes.insert(min(i, len(project.scenes)), s)
 
 
+@dataclass
+class Batch:
+    """Plusieurs commandes annulées et rétablies en une seule étape (grouper, aligner, coller…)."""
+
+    commands: list[Command]
+    label: str = "Modifications"
+
+    def do(self, project: Project) -> None:
+        for cmd in self.commands:
+            cmd.do(project)
+
+    def undo(self, project: Project) -> None:
+        for cmd in reversed(self.commands):
+            cmd.undo(project)
+
+
 class UndoStack:
-    """Pile undo/redo. ``push`` exécute la commande ; ``listener`` est notifié après chaque changement."""
+    """Pile undo/redo. ``push`` exécute la commande ; ``listener`` est notifié après chaque changement.
+
+    Entre ``begin_macro`` et ``end_macro``, chaque commande est exécutée tout de suite (les suivantes
+    voient son effet) mais l'ensemble n'occupe qu'une entrée de la pile : un seul Ctrl+Z l'annule.
+    """
 
     def __init__(self, project: Project, limit: int = 500):
         self.project = project
@@ -370,8 +493,42 @@ class UndoStack:
         self._redo: list[Command] = []
         self.listeners: list[Callable[[], None]] = []
         self.clean_index = 0  # position correspondant à l'état sauvegardé
+        self._macro: Batch | None = None
+        self._macro_depth = 0
+
+    def begin_macro(self, label: str) -> None:
+        if self._macro_depth == 0:
+            self._macro = Batch([], label)
+        self._macro_depth += 1
+
+    def end_macro(self) -> None:
+        if self._macro_depth == 0:
+            raise RuntimeError("end_macro sans begin_macro")
+        self._macro_depth -= 1
+        if self._macro_depth:
+            return
+        batch, self._macro = self._macro, None
+        if batch is None or not batch.commands:
+            return
+        self._undo.append(batch)
+        if len(self._undo) > self.limit:
+            del self._undo[0]
+            self.clean_index = max(-1, self.clean_index - 1)
+        self._redo.clear()
+        self._notify()
+
+    def abort_macro(self) -> None:
+        """Annule les commandes déjà exécutées de la macro en cours (erreur au milieu d'une opération)."""
+        batch, self._macro, self._macro_depth = self._macro, None, 0
+        if batch is not None and batch.commands:
+            batch.undo(self.project)
+            self._notify()
 
     def push(self, cmd: Command, merge: bool = False) -> None:
+        if self._macro is not None:
+            cmd.do(self.project)
+            self._macro.commands.append(cmd)
+            return
         if merge and self._undo and not self._redo:
             last = self._undo[-1]
             merge_fn = getattr(last, "merge_with", None)

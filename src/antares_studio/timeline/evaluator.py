@@ -117,7 +117,7 @@ def sample_track(track: Track, frame: int) -> Value | None:
         return k1.value
     u = (frame - k0.frame) / (k1.frame - k0.frame)
     # l'interpolation est portée par la keyframe de départ du segment
-    return interpolate_value(k0.value, k1.value, apply_easing(k0.easing, u))
+    return interpolate_value(k0.value, k1.value, apply_easing(k0.easing, u, k0.bezier))
 
 
 def resolve_node(node: Node, tracks: list[Track], frame: int) -> dict[str, Any]:

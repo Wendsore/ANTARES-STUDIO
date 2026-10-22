@@ -13,9 +13,11 @@ from antares_studio.domain.model import (
     AudioClip,
     Canvas,
     Keyframe,
+    Marker,
     Node,
     Project,
     Scene,
+    SceneTransition,
     Subtitle,
     Track,
 )
@@ -33,6 +35,19 @@ class ProjectFormatError(ValueError):
 def project_to_dict(project: Project) -> dict[str, Any]:
     d = asdict(project)
     d["schema_version"] = project.schema_version
+    # champs facultatifs omis quand ils valent leur défaut : fichiers identiques pour les anciens projets
+    for scene in d["scenes"]:
+        for track in scene["tracks"]:
+            for kf in track["keyframes"]:
+                if kf.get("bezier") is None:
+                    kf.pop("bezier", None)
+        if not scene.get("markers"):
+            scene.pop("markers", None)
+        if scene.get("transition") == asdict(SceneTransition()):
+            scene.pop("transition", None)
+        for clip in scene["audio"]:
+            if clip.get("role") == "voice":
+                clip.pop("role", None)
     return d
 
 
@@ -97,6 +112,28 @@ def _scene_from(data: Any, path: str) -> Scene:
             _subtitle_from(x, f"{path}.subtitles[{i}]")
             for i, x in enumerate(_expect_list(d.get("subtitles", []), f"{path}.subtitles"))
         ],
+        markers=[
+            _marker_from(x, f"{path}.markers[{i}]")
+            for i, x in enumerate(_expect_list(d.get("markers", []), f"{path}.markers"))
+        ],
+        transition=_transition_from(d.get("transition", {}), f"{path}.transition"),
+    )
+
+
+def _marker_from(data: Any, path: str) -> Marker:
+    d = _expect_dict(data, path)
+    return Marker(
+        id=_expect_str(d.get("id"), f"{path}.id"),
+        frame=_expect_int(d.get("frame"), f"{path}.frame"),
+        label=_expect_str(d.get("label", ""), f"{path}.label"),
+    )
+
+
+def _transition_from(data: Any, path: str) -> SceneTransition:
+    d = _expect_dict(data, path)
+    return SceneTransition(
+        kind=_expect_str(d.get("kind", "none"), f"{path}.kind"),
+        duration_frames=_expect_int(d.get("duration_frames", 15), f"{path}.duration_frames"),
     )
 
 
@@ -115,6 +152,7 @@ def _audio_from(data: Any, path: str) -> AudioClip:
         fade_out_seconds=_expect_number(d.get("fade_out_seconds", 0.0), f"{path}.fade_out_seconds"),
         muted=_expect_bool(d.get("muted", False), f"{path}.muted"),
         duration_seconds=_expect_number(d.get("duration_seconds", 0.0), f"{path}.duration_seconds"),
+        role=_expect_str(d.get("role", "voice"), f"{path}.role"),
     )
 
 
@@ -157,11 +195,18 @@ def _track_from(data: Any, path: str) -> Track:
         kd = _expect_dict(k, f"{path}.keyframes[{i}]")
         if "value" not in kd:
             raise ProjectFormatError(f"{path}.keyframes[{i}].value", "valeur manquante")
+        bezier = kd.get("bezier")
+        if bezier is not None:
+            bpath = f"{path}.keyframes[{i}].bezier"
+            bezier = [_expect_number(v, f"{bpath}[{j}]") for j, v in enumerate(_expect_list(bezier, bpath))]
+            if len(bezier) != 4:
+                raise ProjectFormatError(bpath, "quatre nombres attendus (x1, y1, x2, y2)")
         kfs.append(
             Keyframe(
                 frame=_expect_int(kd.get("frame"), f"{path}.keyframes[{i}].frame"),
                 value=_expect_json_value(kd["value"], f"{path}.keyframes[{i}].value"),
                 easing=_expect_str(kd.get("easing", "linear"), f"{path}.keyframes[{i}].easing"),
+                bezier=bezier,
             )
         )
     return Track(

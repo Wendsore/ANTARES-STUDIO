@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -105,6 +107,20 @@ class ProjectDocument(QObject):
     # --- mutations -------------------------------------------------------
     def push(self, cmd: Command, merge: bool = False) -> None:
         self.undo.push(cmd, merge=merge)
+
+    @contextmanager
+    def macro(self, label: str) -> Iterator[None]:
+        """Regroupe les commandes poussées dans le bloc en une seule étape d'annulation.
+
+        En cas d'exception, les commandes déjà appliquées sont défaites puis l'exception est relancée.
+        """
+        self.undo.begin_macro(label)
+        try:
+            yield
+        except BaseException:
+            self.undo.abort_macro()
+            raise
+        self.undo.end_macro()
 
     def set_node_property(self, node_id: str, path: str, value: Any, merge: bool = False) -> None:
         """Modifie une propriété ; pose une image clé si elle est animée ou si « clé auto » est actif."""
