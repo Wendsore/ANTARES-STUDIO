@@ -47,7 +47,25 @@ Pour retirer toute l'animation d'une propriété : **clic droit** sur son losang
 
 ## Interpolation des clés
 
-Les clés posées à la main sont **linéaires**. Les [animations prédéfinies](animations.md) proposent accélération et décélération. Le choix de l'interpolation clé par clé n'est pas encore disponible dans l'interface.
+L'interpolation dit comment la valeur passe d'une clé à la **suivante** : linéaire, accélération, décélération, palier (saut net, dessiné en pointillés dans la Timeline)…
+
+1. Cliquez sur un losange dans la Timeline pour le sélectionner.
+2. Choisissez dans la liste **Interpolation** de la barre de la Timeline, ou faites un **clic droit** sur le losange.
+3. **Courbe personnalisée…** ouvre l'éditeur de courbe : déplacez les deux poignées, ou partez d'un préréglage. La courbe suit la notation `cubic-bezier` du web.
+
+Une clé reposée au même endroit garde son interpolation. Une nouvelle clé posée à la main est linéaire.
+
+## Repères
+
+Un **repère** est un fanion nommé dans la règle de la Timeline : « explosion », « 2e loi »…
+
+- **Animation > Ajouter un repère à l'image courante** (touche M).
+- **Animation > Repère précédent** ([) et **Animation > Repère suivant** (]) déplacent la tête de lecture.
+- Dans la règle : glisser un fanion le déplace, double-clic le renomme, clic droit propose aussi « Aller au repère » et « Supprimer le repère ».
+
+## Caler une animation sur la narration
+
+Dans la fenêtre d'une [animation prédéfinie](animations.md), la liste **Caler sur** reprend le début et la durée d'un **repère** (jusqu'au repère suivant), d'un **sous-titre** ou d'un **clip audio**. L'animation démarre ainsi exactement quand la phrase est dite.
 
 ## Lecture
 

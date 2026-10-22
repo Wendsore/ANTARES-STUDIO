@@ -55,6 +55,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic("graphiques", "Sciences", "Graphiques de données (CSV)", "csv courbe données tableur"),
     Topic("kepler", "Sciences", "Orbites de Kepler et unités", "orbite ellipse verlet unités"),
     Topic("planete-3d", "Sciences", "Planète 3D avec Blender (facultatif)", "blender 3d planète"),
+    Topic("modeles-3d", "Sciences", "Modèles 3D (glTF)", "gltf glb 3d modèle objet import"),
     Topic("images", "Ressources", "Images importées", "png svg jpeg photo"),
     Topic("provenance-et-licences", "Ressources", "Provenance et licences", "licence droits auteur"),
     Topic("credits", "Ressources", "Crédits", "générique sources"),
@@ -178,11 +179,14 @@ def _profiles() -> str:
     from antares_studio.rendering.plan import PROFILES
 
     lines = [
-        "| Profil | Image | Qualité (CRF, plus bas = meilleur) | Vitesse d'encodage |",
-        "|---|---|---|---|",
+        "| Profil | Groupe | Fichier | Image | Identifiant (`--profile`) |",
+        "|---|---|---|---|---|",
     ]
     for p in PROFILES.values():
-        lines.append(f"| **{p.label}** | {p.width} × {p.height} | {p.crf} | {p.preset} |")
+        frame = f"{p.width} × {p.height}" + (" imposé" if p.fixed_frame else "")
+        fps = f", {p.max_fps:g} images/s au plus" if p.max_fps else ""
+        sound = "" if p.has_audio else ", sans son"
+        lines.append(f"| **{p.label}** | {p.group} | `{p.suffix}`{sound} | {frame}{fps} | `{p.id}` |")
     return "\n".join(lines)
 
 

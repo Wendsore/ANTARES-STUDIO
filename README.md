@@ -40,13 +40,13 @@ Sous Windows : `.venv\Scripts\python -m pip install -e .[dev]` puis `.venv\Scrip
 
 Les tests marqués `render` exigent FFmpeg et sont ignorés (visibles comme `skipped`) s'il est absent.
 
-Paquet Windows (phase 9, en cours) : `pip install pyinstaller==6.22.3` puis `python packaging/build.py --check` ; la CI publie l'archive `ANTARES-Studio-windows-x64.zip`. Contrôle d'installation : `"ANTARES Studio.exe" --selftest`.
+Paquet Windows (phase 9, en cours) : `pip install pyinstaller==6.22.3` puis `python packaging/build.py --check` ; la CI publie l'archive `ANTARES-Studio-windows-x64.zip`. Installateur par utilisateur (non signé) : `packaging/installer.iss` (Inno Setup 6), construit, installé et autotesté par la CI. Contrôle d'installation : `"ANTARES Studio.exe" --selftest`.
 
 ## État d'avancement
 
 Voir [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) (vérité sur les phases), [`CHANGELOG.md`](CHANGELOG.md), les ADR dans [`docs/adr/`](docs/adr/) et le guide [`docs/user-guide/01-premiere-video.md`](docs/user-guide/01-premiere-video.md).
 
-Dans le logiciel : **Aide > Centre d'aide** (F1, 32 rubriques en français, recherche, aide contextuelle), **Aide > Tutoriels** (7 parcours guidés validés automatiquement sur vos actions), **Ctrl+K** pour retrouver n'importe quelle commande, thème sombre ou clair et taille du texte dans **Affichage**.
+Dans le logiciel : **Aide > Centre d'aide** (F1, 33 rubriques en français, recherche, aide contextuelle), **Aide > Tutoriels** (7 parcours guidés validés automatiquement sur vos actions), **Ctrl+K** pour retrouver n'importe quelle commande, thème sombre ou clair et taille du texte dans **Affichage**. Pour démarrer vite : **Fichier > Exemples** ouvre une vidéo complète à modifier.
 
 ## Lancer l'application
 

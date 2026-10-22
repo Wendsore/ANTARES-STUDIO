@@ -33,6 +33,7 @@ Les anomalies du fichier (cellules ignorées, colonnes sans nombre, noms en doub
 
 Dans l'Inspecteur :
 
+- **Représentation** : **Courbe**, **Barres** (une barre par ligne du fichier, libellée par la colonne X) ou **Histogramme** (répartition des valeurs de la colonne Y en **classes** de même largeur, nombre réglable) ;
 - **Données (CSV)**, **Colonne X**, **Colonne Y** : choix parmi les colonnes du fichier ;
 - **Titre**, **Largeur**, **Hauteur** ;
 - bornes **X min / X max / Y min / Y max** (0 = automatique, avec des graduations « rondes ») ;
@@ -47,4 +48,4 @@ Appliquez l'animation **Tracer la courbe** : la propriété *Progression du trac
 
 Le [tutoriel 5](tutoriels.md) importe `planetes-periode-distance.csv` : distances et périodes des huit planètes selon la NASA. Le graphique montre que la période croît plus vite que la distance. C'est la troisième loi de Kepler : le carré de la période est proportionnel au cube de la distance.
 
-Échelles logarithmiques, histogrammes et plusieurs courbes sur un même graphique ne sont pas encore disponibles.
+Échelles logarithmiques et plusieurs courbes sur un même graphique ne sont pas encore disponibles.

@@ -33,6 +33,7 @@ from antares_studio.app.dialogs import AboutDialog, DiagnosticsDialog, NewProjec
 from antares_studio.app.document import ProjectDocument
 from antares_studio.app.export_dialog import ExportDialog
 from antares_studio.app.export_queue import ExportJob, ExportQueue, ExportsPanel
+from antares_studio.app.first_tips import TipManager
 from antares_studio.app.help_center import HelpCenter
 from antares_studio.app.inspector_dock import InspectorDock
 from antares_studio.app.layers_dock import LayersDock
@@ -70,6 +71,7 @@ from antares_studio.rendering.exporter import ProjectRenderResult, RenderError, 
 from antares_studio.rendering.plan import build_render_plan
 from antares_studio.rendering.qt_painter import ImageCache
 from antares_studio.rendering.transitions import FrameRenderer
+from antares_studio.resources.examples import EXAMPLES, build_example
 from antares_studio.resources.licenses import inventory
 from antares_studio.resources.templates import TEMPLATES, create_project, scale_warning_node, template_labels
 from antares_studio.timeline.presets import apply_preset
@@ -154,6 +156,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("ANTARES Studio")
         self.resize(1400, 860)
         self.canvas = CanvasWidget(self.document)
+        self.canvas.setObjectName("canvas")
         self.setCentralWidget(self.canvas)
         self._build_docks()
         self._build_actions()
@@ -168,6 +171,11 @@ class MainWindow(QMainWindow):
         self._tutorial_timer = QTimer(self)
         self._tutorial_timer.setInterval(300)
         self._tutorial_timer.timeout.connect(self.tutorial.refresh)
+        self.tips = TipManager(
+            self,
+            self.settings,
+            blocked=lambda: self.tutorial.run is not None and self.tutorial_dock.isVisible(),
+        )
         self._apply_icons()
         self._set_whats_this()
         self.statusBar().showMessage(
@@ -411,6 +419,11 @@ class MainWindow(QMainWindow):
             "Rechercher une &commande…", self.show_command_palette, "Ctrl+K", "Toutes les commandes"
         )
         self.act_welcome = self._action("&Accueil…", self.show_welcome)
+        self.act_reset_tips = self._action(
+            "Réafficher les a&stuces",
+            self.reset_tips,
+            tip="Chaque panneau montrera de nouveau son astuce la prochaine fois que vous y travaillerez",
+        )
         self.act_shortcuts = self._action("&Raccourcis clavier", lambda: self.show_help("raccourcis"))
         self.theme_group = QActionGroup(self)
         self.theme_actions: dict[str, QAction] = {}
@@ -447,6 +460,11 @@ class MainWindow(QMainWindow):
         for a in (self.act_new, self.act_open):
             m_file.addAction(a)
         self.menu_recent = m_file.addMenu("Projets &récents")
+        self.menu_examples = m_file.addMenu("E&xemples")
+        for eid, ex in EXAMPLES.items():
+            act = self.menu_examples.addAction(ex.title)
+            act.setStatusTip(ex.summary)
+            act.triggered.connect(lambda _c=False, e=eid: self.open_example(e))
         self._fill_recent()
         m_file.addSeparator()
         for a in (self.act_save, self.act_save_as):
@@ -559,7 +577,7 @@ class MainWindow(QMainWindow):
         m_help.addAction(self.act_help)
         self.menu_tutorials = m_help.addMenu("&Tutoriels")
         self._fill_tutorials_menu()
-        for a in (self.act_shortcuts, self.act_whats_this, self.act_welcome):
+        for a in (self.act_shortcuts, self.act_whats_this, self.act_welcome, self.act_reset_tips):
             m_help.addAction(a)
         m_help.addSeparator()
         m_help.addAction(self.act_diag)
@@ -1747,6 +1765,8 @@ class MainWindow(QMainWindow):
             self._open_recent(Path(arg))
         elif kind == "template":
             self.new_project_from_template(arg)
+        elif kind == "example":
+            self.open_example(arg)
         elif kind == "tutorial":
             self.start_tutorial(arg)
         elif kind == "help":
@@ -1759,6 +1779,18 @@ class MainWindow(QMainWindow):
         title = TEMPLATES[template_id][0].split(" (")[0]
         self._set_document(ProjectDocument(create_project(title, Canvas(), template_id, 20)))
         self.statusBar().showMessage(f"Projet « {title} » créé. Pensez à l'enregistrer (Ctrl+S).", 6000)
+        return True
+
+    def open_example(self, example_id: str) -> bool:
+        """Ouvre un projet d'exemple complet (non enregistré) ; aucune voix : seulement les sous-titres."""
+        if example_id not in EXAMPLES or not self.maybe_save():
+            return False
+        self._set_document(ProjectDocument(build_example(example_id)))
+        self.statusBar().showMessage(
+            f"Exemple « {EXAMPLES[example_id].title} » ouvert : sous-titres sans voix. "
+            "Enregistrez-le (Ctrl+S) pour le modifier à votre guise.",
+            8000,
+        )
         return True
 
     # --- tutoriels ----------------------------------------------------------------
@@ -1795,6 +1827,10 @@ class MainWindow(QMainWindow):
                 **self.ui_counters,
             },
         )
+
+    def reset_tips(self) -> None:
+        self.settings.reset_tips()
+        self.statusBar().showMessage("Astuces réactivées : elles réapparaîtront panneau par panneau.", 5000)
 
     def start_tutorial(self, tutorial_id: str) -> bool:
         tut = TUTORIALS_BY_ID.get(tutorial_id)

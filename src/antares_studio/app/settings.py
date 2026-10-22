@@ -116,6 +116,23 @@ class AppSettings:
     def set_show_welcome(self, on: bool) -> None:
         self._s.setValue("ui/show_welcome", bool(on))
 
+    def show_tips(self) -> bool:
+        return bool(self._s.value("help/show_tips", True, type=bool))
+
+    def set_show_tips(self, on: bool) -> None:
+        self._s.setValue("help/show_tips", bool(on))
+
+    def tips_seen(self) -> set[str]:
+        raw = self._s.value("help/tips_seen", [], type=list)
+        return {str(x) for x in raw} if isinstance(raw, list) else set()
+
+    def mark_tip_seen(self, key: str) -> None:
+        self._s.setValue("help/tips_seen", sorted(self.tips_seen() | {key}))
+
+    def reset_tips(self) -> None:
+        self._s.setValue("help/tips_seen", [])
+        self.set_show_tips(True)
+
     def tutorials_done(self) -> set[str]:
         raw = self._s.value("help/tutorials_done", [], type=list)
         return {str(x) for x in raw} if isinstance(raw, list) else set()

@@ -24,11 +24,11 @@ Voir [Images clés et Timeline](images-cles.md).
 
 ## Plusieurs objets sélectionnés
 
-L'Inspecteur l'indique ; déplacez-les ensemble sur le canevas. Il détaille un objet à la fois.
+L'Inspecteur montre les propriétés **communes** à tous les objets sélectionnés. Un champ marqué **≠** a des valeurs différentes d'un objet à l'autre : ce que vous saisissez s'applique à **tous**, et un seul Ctrl+Z annule le tout.
 
 ## Rien n'est sélectionné
 
 L'Inspecteur montre :
 
-- **la scène** : nom, durée en images (l'infobulle donne la durée en secondes), couleur de fond, format du canevas ;
+- **la scène** : nom, durée en images (l'infobulle donne la durée en secondes), couleur de fond, **transition** d'entrée et sa durée, format du canevas ;
 - **les métadonnées scientifiques** du projet : représentation, à l'échelle ou non, notes, sources. Voir [Rigueur scientifique](rigueur-scientifique.md).

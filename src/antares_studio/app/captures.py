@@ -53,6 +53,7 @@ def _capture(folder: Path) -> list[Path]:
 
     folder.mkdir(parents=True, exist_ok=True)
     window = MainWindow()
+    window.settings.set_show_tips(False)  # préférences isolées : aucune bulle d'astuce sur les captures
     window.resize(1500, 900)
     window.show()
     window._set_document(ProjectDocument(create_project("Phases de la Lune", Canvas(), "moon_phases", 20)))

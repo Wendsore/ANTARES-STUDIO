@@ -52,4 +52,6 @@ Commencez toujours par **Aide > Diagnostics…** : il indique ce qui manque.
 
 ## Signaler un problème
 
-Joignez : le texte de **Aide > Diagnostics…**, les étapes pour reproduire, le message exact et, si possible, le dossier du projet compressé.
+**Aide > Créer un rapport d'incident…** produit un fichier `.zip` lisible à joindre à votre demande : diagnostics, structure du projet (nombre de scènes, d'objets, types), et erreurs inattendues enregistrées par ANTARES. **Aucun contenu** du projet (textes, images, sons) n'y figure, votre dossier personnel est remplacé par `~`, et **rien n'est envoyé** : vous décidez à qui le transmettre.
+
+Ajoutez les étapes pour reproduire et le message exact.
