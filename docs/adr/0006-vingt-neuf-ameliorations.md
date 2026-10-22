@@ -72,8 +72,9 @@ hors ligne, français, PySide6 + FFmpeg seuls, format de projet v1 lisible par l
   `\r\n` et dépassait la borne) ;
 - un objet ajouté est posé au **centième de pixel** : le centre de la vue tombait à 960,0000000000001
   selon la taille de la fenêtre (CI Windows), valeur ensuite rétablie par Ctrl+Z ;
-- Inspecteur : libellés pleine largeur renvoyés à la ligne et lignes du formulaire repliées sous leur
-  libellé (police plus large sur la CI et sous Windows, long nom de scène) ; case « à l'échelle » à
+- Inspecteur : contenu toujours à la largeur visible (politique horizontale « Ignored », pas de barre
+  horizontale), libellés pleine largeur renvoyés à la ligne, lignes du formulaire repliées sous leur
+  libellé (polices de la CI et de Windows plus larges, long nom de scène) ; case « à l'échelle » à
   côté de « Distances et tailles : » ;
 - `AddMarker` rendait inopérant l'objet retourné (copie) ; en-têtes de la Narration tronqués ; bouton
   « Close » non traduit ; identifiant de rubrique d'aide invalide pour le panneau Exports.

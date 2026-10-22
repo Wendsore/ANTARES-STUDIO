@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSpinBox,
     QToolButton,
     QVBoxLayout,
@@ -155,6 +156,10 @@ class InspectorDock(QWidget):
         self.scroll_area.setWidgetResizable(True)
         outer.addWidget(self.scroll_area)
         self.body = QWidget()
+        # largeur toujours égale à la zone visible, quelles que soient les polices du système (Windows) :
+        # les champs se resserrent ou passent sous leur libellé, jamais de défilement horizontal
+        self.body.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.scroll_area.setWidget(self.body)
         self.form = QFormLayout(self.body)
         # panneau étroit ou police large : le champ passe sous son libellé plutôt que de faire défiler
