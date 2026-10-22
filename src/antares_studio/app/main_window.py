@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import copy
+import json
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QSize, Qt, QTimer
+from PySide6.QtCore import QMimeData, QPointF, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
@@ -40,6 +41,8 @@ from antares_studio.app.provenance_dialog import LicenseInventoryDialog, edit_as
 from antares_studio.app.settings import AppSettings
 from antares_studio.app.timeline_dock import TimelineDock
 from antares_studio.app.tutorial_panel import Highlighter, TutorialPanel
+from antares_studio.domain.clipboard import MIME_TYPE as CLIPBOARD_MIME
+from antares_studio.domain.clipboard import PastePayload, copy_nodes, read_payload, remap_assets
 from antares_studio.domain.commands import (
     AddNode,
     AddScene,
@@ -51,6 +54,7 @@ from antares_studio.domain.commands import (
 )
 from antares_studio.domain.ids import new_id
 from antares_studio.domain.kinds import spec_for
+from antares_studio.domain.layout import ALIGN_MODES, align_deltas, distribute_deltas
 from antares_studio.domain.model import AssetLicense, Canvas, Node, Scene
 from antares_studio.domain.validation import ProjectValidationError
 from antares_studio.help import topics
@@ -84,7 +88,10 @@ ACTION_ICONS: dict[str, str] = {
     "act_undo": "undo-2",
     "act_redo": "redo-2",
     "act_delete": "trash-2",
-    "act_duplicate": "copy",
+    "act_duplicate": "copy-plus",
+    "act_copy": "copy",
+    "act_cut": "scissors",
+    "act_paste": "clipboard-paste",
     "act_group": "group",
     "act_play": "play",
     "act_go_start": "skip-back",
@@ -98,6 +105,16 @@ ACTION_ICONS: dict[str, str] = {
     "act_shortcuts": "keyboard",
     "act_diag": "wrench",
     "act_about": "info",
+    "act_distribute_h": "align-horizontal-distribute-center",
+    "act_distribute_v": "align-vertical-distribute-center",
+}
+ALIGN_ICONS: dict[str, str] = {
+    "left": "align-start-vertical",
+    "hcenter": "align-center-vertical",
+    "right": "align-end-vertical",
+    "top": "align-start-horizontal",
+    "vcenter": "align-center-horizontal",
+    "bottom": "align-end-horizontal",
 }
 
 
@@ -265,6 +282,25 @@ class MainWindow(QMainWindow):
         self.act_select_all = self._action(
             "&Tout sélectionner", self.select_all, QKeySequence.StandardKey.SelectAll
         )
+        self.act_copy = self._action("&Copier", self.copy_selection, QKeySequence.StandardKey.Copy)
+        self.act_cut = self._action("Co&uper", self.cut_selection, QKeySequence.StandardKey.Cut)
+        self.act_paste = self._action("C&oller", self.paste, QKeySequence.StandardKey.Paste)
+        self._paste_count = 0
+        QApplication.clipboard().dataChanged.connect(self._on_clipboard_changed)
+        self.align_actions: dict[str, QAction] = {
+            mode: self._action(label, lambda _c=False, m=mode: self.align_selection(m))
+            for mode, label in ALIGN_MODES.items()
+        }
+        self.act_distribute_h = self._action(
+            "Répartir horizontalement",
+            lambda: self.distribute_selection("x"),
+            tip="Espacement égal (3 objets ou plus)",
+        )
+        self.act_distribute_v = self._action(
+            "Répartir verticalement",
+            lambda: self.distribute_selection("y"),
+            tip="Espacement égal (3 objets ou plus)",
+        )
         self.act_group = self._action("&Grouper", self.group_selection, "Ctrl+G")
         self.act_ungroup = self._action("Dégrou&per", self.ungroup_selection, "Ctrl+Shift+G")
         self.act_play = self._action("&Lecture / pause", self.timeline.toggle_play, "Space")
@@ -291,6 +327,13 @@ class MainWindow(QMainWindow):
         self.act_grid.setCheckable(True)
         self.act_snap = self._action("&Aimanter à la grille", self.toggle_snap, "Ctrl+Shift+'")
         self.act_snap.setCheckable(True)
+        self.act_guides = self._action(
+            "Guides d'a&lignement (bords et centres)",
+            self.toggle_guides,
+            tip="Aimante un objet déplacé aux autres objets et au centre ; maintenir Ctrl pour l'ignorer",
+        )
+        self.act_guides.setCheckable(True)
+        self.act_guides.setChecked(True)
         self.act_safe = self._action("Zones &sûres (sous-titres)", self.toggle_safe_zones)
         self.act_safe.setCheckable(True)
         self.act_reset_layout = self._action("Réinitialiser la disposition", self.reset_layout)
@@ -356,11 +399,23 @@ class MainWindow(QMainWindow):
         for a in (self.act_undo, self.act_redo):
             m_edit.addAction(a)
         m_edit.addSeparator()
+        for a in (self.act_cut, self.act_copy, self.act_paste):
+            m_edit.addAction(a)
+        m_edit.addSeparator()
         for a in (self.act_select_all, self.act_duplicate, self.act_delete):
             m_edit.addAction(a)
         m_edit.addSeparator()
         for a in (self.act_group, self.act_ungroup):
             m_edit.addAction(a)
+        m_align = m_edit.addMenu("&Aligner et répartir")
+        for mode in ("left", "hcenter", "right"):
+            m_align.addAction(self.align_actions[mode])
+        m_align.addSeparator()
+        for mode in ("top", "vcenter", "bottom"):
+            m_align.addAction(self.align_actions[mode])
+        m_align.addSeparator()
+        m_align.addAction(self.act_distribute_h)
+        m_align.addAction(self.act_distribute_v)
         m_edit.addSeparator()
         m_edit.addAction(self.act_palette)
         m_add = mb.addMenu("&Objet")
@@ -418,7 +473,7 @@ class MainWindow(QMainWindow):
         for a in (self.act_zoom_in, self.act_zoom_out, self.act_zoom_fit):
             m_view.addAction(a)
         m_view.addSeparator()
-        for a in (self.act_grid, self.act_snap, self.act_safe):
+        for a in (self.act_grid, self.act_snap, self.act_guides, self.act_safe):
             m_view.addAction(a)
         m_view.addSeparator()
         for dock in self._all_docks():
@@ -514,8 +569,12 @@ class MainWindow(QMainWindow):
         self.act_redo.setEnabled(d.undo.can_redo)
         self.act_redo.setText(f"&Rétablir {d.undo.redo_label}" if d.undo.can_redo else "&Rétablir")
         has_sel = bool(d.selection)
-        for a in (self.act_delete, self.act_duplicate, self.act_group):
+        for a in (self.act_delete, self.act_duplicate, self.act_group, self.act_copy, self.act_cut):
             a.setEnabled(has_sel)
+        for a in self.align_actions.values():
+            a.setEnabled(has_sel)
+        for a in (self.act_distribute_h, self.act_distribute_v):
+            a.setEnabled(len(d.selection) >= 3)
         self.act_ungroup.setEnabled(any(n.kind == "group" for n in d.selected_nodes))
         n = len(d.selection)
         self.status_sel.setText(
@@ -557,6 +616,9 @@ class MainWindow(QMainWindow):
 
     def toggle_snap(self, on: bool) -> None:
         self.canvas.snap_to_grid = on
+
+    def toggle_guides(self, on: bool) -> None:
+        self.canvas.smart_guides = on
 
     def toggle_safe_zones(self, on: bool) -> None:
         self.canvas.show_safe_zones = on
@@ -1010,6 +1072,165 @@ class MainWindow(QMainWindow):
                 new_ids.append(clone.id)
             self.document.set_selection(new_ids)
 
+    # --- presse-papiers ----------------------------------------------------------
+    def _on_clipboard_changed(self) -> None:
+        self._paste_count = 0
+
+    def copy_selection(self) -> bool:
+        scene = self.document.scene
+        if scene is None or not self.document.selection:
+            return False
+        data = copy_nodes(
+            self.document.project,
+            scene,
+            self.document.selection,
+            str(self.document.root) if self.document.root else None,
+        )
+        mime = QMimeData()
+        mime.setData(CLIPBOARD_MIME, json.dumps(data, ensure_ascii=False).encode("utf-8"))
+        QApplication.clipboard().setMimeData(mime)
+        self._paste_count = 0
+        n = len(data["nodes"])
+        self.statusBar().showMessage(f"{n} objet{'s' if n > 1 else ''} copié{'s' if n > 1 else ''}.", 3000)
+        return True
+
+    def cut_selection(self) -> None:
+        if self.copy_selection():
+            with self.document.macro("Couper"):
+                self.delete_selection()
+
+    def paste(self) -> list[str]:
+        """Colle les objets du presse-papiers dans la scène courante ; retourne les racines collées."""
+        scene = self.document.scene
+        mime = QApplication.clipboard().mimeData()
+        if scene is None or mime is None or not mime.hasFormat(CLIPBOARD_MIME):
+            self.statusBar().showMessage("Le presse-papiers ne contient pas d'objets ANTARES Studio.", 4000)
+            return []
+        self._paste_count += 1
+        step = 20.0 * self._paste_count
+        try:
+            raw = json.loads(bytes(mime.data(CLIPBOARD_MIME).data()).decode("utf-8"))
+            payload = read_payload(raw, self.document.project, offset=(step, step))
+        except (ValueError, UnicodeDecodeError) as exc:
+            QMessageBox.warning(self, "Coller", f"Collage impossible : {exc}")
+            return []
+        warnings = list(payload.warnings)
+        remap_assets(payload, self._paste_assets(payload, warnings))
+        with self.document.macro("Coller"):
+            for node in payload.nodes:
+                self.document.push(AddNode(scene.id, node))
+            for node in payload.nodes:
+                tracks = [t for t in payload.tracks if t.target_id == node.id]
+                if tracks:
+                    self.document.push(ReplaceTracks(scene.id, node.id, tracks, label="Coller l'animation"))
+        roots = [n.id for n in payload.nodes if n.parent_id is None]
+        self.document.set_selection(roots)
+        n = len(payload.nodes)
+        msg = f"{n} objet{'s' if n > 1 else ''} collé{'s' if n > 1 else ''}."
+        self.statusBar().showMessage(msg + (" " + " ; ".join(warnings) if warnings else ""), 8000)
+        return roots
+
+    def _paste_assets(self, payload: PastePayload, warnings: list[str]) -> dict[str, str]:
+        """Ressources d'un autre projet : réutilise un fichier identique, sinon le recopie dans celui-ci."""
+        from antares_studio.persistence.paths import UnsafePathError, resolve_under
+        from antares_studio.resources.assets import import_asset
+
+        project = self.document.project
+        mapping: dict[str, str] = {}
+        for asset in payload.assets:
+            mine = project.asset(asset.id)
+            if mine is not None and (payload.same_project or mine.sha256 == asset.sha256):
+                continue
+            twin = next((a for a in project.assets if asset.sha256 and a.sha256 == asset.sha256), None)
+            if twin is not None:
+                mapping[asset.id] = twin.id
+                continue
+            source = None
+            if payload.root_path and asset.kind in ("image", "data", "audio"):
+                try:
+                    source = resolve_under(Path(payload.root_path), asset.path)
+                except UnsafePathError:
+                    source = None
+            if source is None or not source.is_file():
+                mapping[asset.id] = ""
+                warnings.append(f"ressource introuvable, référence retirée : {asset.path}")
+                continue
+            if self.document.paths is None:
+                QMessageBox.information(
+                    self, "Coller", "Enregistrez d'abord le projet : les ressources collées y seront copiées."
+                )
+                if not self.save_project_as():
+                    mapping[asset.id] = ""
+                    warnings.append(f"projet non enregistré, ressource non copiée : {asset.path}")
+                    continue
+            try:
+                new = import_asset(self.document, source, kind=asset.kind)
+            except (OSError, ValueError) as exc:
+                mapping[asset.id] = ""
+                warnings.append(f"copie impossible de {asset.path} : {exc}")
+                continue
+            mapping[asset.id] = new.id
+            if asset.license != new.license:
+                self.document.push(SetAssetLicense(new.id, copy.deepcopy(asset.license)))
+        return mapping
+
+    # --- aligner et répartir ------------------------------------------------------
+    def _movable_rects(self) -> list[tuple[Node, tuple[float, float, float, float]]]:
+        """Objets sélectionnés déplaçables (non verrouillés, sans ancêtre aussi sélectionné) et leur boîte."""
+        scene = self.document.scene
+        state = self.document.state()
+        if scene is None or state is None:
+            return []
+        sel = set(self.document.selection)
+        out = []
+        for node in self.document.selected_nodes:
+            if node.locked:
+                continue
+            parent, nested = node.parent_id, False
+            while parent is not None:
+                if parent in sel:
+                    nested = True
+                    break
+                p = scene.find_node(parent)
+                parent = p.parent_id if p else None
+            if not nested:
+                out.append((node, self.canvas.node_rect(state.node(node.id))))
+        return out
+
+    def _move_by(self, items: list[tuple[Node, tuple[float, float]]], label: str) -> None:
+        state = self.document.state()
+        if state is None:
+            return
+        with self.document.macro(label):
+            for node, (dx, dy) in items:
+                if abs(dx) < 1e-9 and abs(dy) < 1e-9:
+                    continue
+                local = self.canvas._parent_inverse_linear(node.id).map(QPointF(dx, dy))
+                st = state.node(node.id)
+                self.document.set_node_properties(
+                    node.id,
+                    {"position.x": st.position[0] + local.x(), "position.y": st.position[1] + local.y()},
+                )
+
+    def align_selection(self, mode: str) -> None:
+        """Aligne la sélection sur sa boîte englobante ; un objet seul s'aligne sur le canevas."""
+        items = self._movable_rects()
+        if not items:
+            return
+        c = self.document.project.canvas
+        ref = (0.0, 0.0, float(c.width), float(c.height)) if len(items) == 1 else None
+        deltas = align_deltas([r for _n, r in items], mode, ref)
+        self._move_by([(n, d) for (n, _r), d in zip(items, deltas, strict=True)], ALIGN_MODES[mode])
+
+    def distribute_selection(self, axis: str) -> None:
+        items = self._movable_rects()
+        if len(items) < 3:
+            self.statusBar().showMessage("Répartir : sélectionnez au moins trois objets.", 4000)
+            return
+        deltas = distribute_deltas([r for _n, r in items], axis)
+        label = "Répartir horizontalement" if axis == "x" else "Répartir verticalement"
+        self._move_by([(n, d) for (n, _r), d in zip(items, deltas, strict=True)], label)
+
     def select_all(self) -> None:
         scene = self.document.scene
         if scene is not None:
@@ -1120,6 +1341,8 @@ class MainWindow(QMainWindow):
     def _apply_icons(self) -> None:
         for name, icon_name in ACTION_ICONS.items():
             getattr(self, name).setIcon(icons.icon(icon_name))
+        for mode, icon_name in ALIGN_ICONS.items():
+            self.align_actions[mode].setIcon(icons.icon(icon_name))
         self.menu_tutorials.menuAction().setIcon(icons.icon("graduation-cap"))
         self.timeline.restyle()
         self.library.refresh_icons()

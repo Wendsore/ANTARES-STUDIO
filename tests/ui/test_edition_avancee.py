@@ -154,3 +154,116 @@ def test_timeline_key_menu_lists_every_interpolation(window, qtbot) -> None:  # 
     assert scene.track_for(node.id, "position.x").keyframes[1].easing == "step"
     next(a for a in menu.actions() if a.text() == "Supprimer l'image clé").trigger()
     assert len(scene.track_for(node.id, "position.x").keyframes) == 1
+
+
+# --- presse-papiers, aligner, guides -------------------------------------------------------------
+def _png(path, color=(200, 40, 40)) -> None:  # type: ignore[no-untyped-def]
+    from PySide6.QtGui import QColor, QImage
+
+    img = QImage(16, 16, QImage.Format.Format_RGB32)
+    img.fill(QColor(*color))
+    assert img.save(str(path))
+
+
+def test_copy_paste_in_scene_and_cut_is_one_step(window, qtbot) -> None:  # type: ignore[no-untyped-def]
+    a = window.add_node_of_kind("circle")
+    scene = window.document.scene
+    window.document.push(SetKeyframe(scene.id, a.id, "opacity", 0, 0.0))
+    window.document.set_selection([a.id])
+    assert window.act_copy.isEnabled() and window.copy_selection()
+    before = len(scene.nodes)
+    roots = window.paste()
+    assert len(roots) == 1 and len(scene.nodes) == before + 1
+    pasted = scene.node(roots[0])
+    assert pasted.id != a.id and pasted.position == [a.position[0] + 20, a.position[1] + 20]
+    assert scene.track_for(pasted.id, "opacity") is not None
+    assert window.document.selection == roots and window.document.undo.undo_label == "Coller"
+    second = window.paste()  # deuxième collage : décalé une fois de plus
+    assert scene.node(second[0]).position == [a.position[0] + 40, a.position[1] + 40]
+    window.document.set_selection([a.id])
+    window.cut_selection()
+    assert scene.find_node(a.id) is None
+    window.document.undo.undo()  # un seul Ctrl+Z restaure l'objet coupé
+    assert scene.find_node(a.id) is not None
+
+
+def test_paste_rejects_foreign_clipboard(window, qtbot) -> None:  # type: ignore[no-untyped-def]
+    from PySide6.QtWidgets import QApplication
+
+    QApplication.clipboard().setText("du texte ordinaire")
+    assert window.paste() == []
+    assert "ne contient pas" in window.statusBar().currentMessage()
+
+
+def test_paste_into_another_project_copies_image_file(window, qtbot, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from antares_studio.app.document import ProjectDocument
+    from antares_studio.domain.model import Canvas
+    from antares_studio.resources.assets import import_asset
+    from antares_studio.resources.templates import create_project
+
+    window.document.save(tmp_path / "Source.antares")
+    _png(tmp_path / "terre.png")
+    asset = import_asset(window.document, tmp_path / "terre.png", kind="image")
+    from antares_studio.domain.commands import SetAssetLicense
+    from antares_studio.domain.model import AssetLicense
+
+    window.document.push(SetAssetLicense(asset.id, AssetLicense(author="Moi", license="CC-BY-4.0")))
+    img = window.add_node_of_kind("image")
+    window.document.set_node_property(img.id, "params.asset_id", asset.id)
+    window.document.set_selection([img.id])
+    assert window.copy_selection()
+    window.document.undo.mark_clean()
+    target = ProjectDocument(create_project("Cible", Canvas(), "", 10))
+    target.save(tmp_path / "Cible.antares")
+    window._set_document(target)
+    roots = window.paste()
+    node = target.scene.node(roots[0])
+    new_asset = target.project.asset(node.params["asset_id"])
+    assert new_asset is not None and new_asset.id != "" and new_asset.sha256 == asset.sha256
+    assert (tmp_path / "Cible.antares" / new_asset.path).is_file()  # fichier recopié dans le projet cible
+    assert new_asset.license.author == "Moi" and new_asset.license.license == "CC-BY-4.0"
+
+
+def test_align_and_distribute_from_menu(window, qtbot) -> None:  # type: ignore[no-untyped-def]
+    a, b, c = (window.add_node_of_kind("rect") for _ in range(3))
+    for n, (x, y) in zip((a, b, c), ((300.0, 200.0), (900.0, 500.0), (1500.0, 260.0)), strict=True):
+        window.document.set_node_properties(n.id, {"position.x": x, "position.y": y})
+    window.document.set_selection([a.id, b.id, c.id])
+    assert window.act_distribute_h.isEnabled()
+    window.align_actions["top"].trigger()
+    assert a.position[1] == b.position[1] == c.position[1] == pytest.approx(200.0)
+    assert window.document.undo.undo_label == "Aligner en haut"
+    window.document.set_node_properties(b.id, {"position.x": 500.0})
+    window.distribute_selection("x")
+    assert b.position[0] == pytest.approx(900.0)  # milieu exact entre 300 et 1500 (largeurs égales)
+    window.document.set_selection([a.id])
+    window.align_selection("hcenter")  # objet seul : centré sur le canevas
+    assert a.position[0] == pytest.approx(960.0)
+
+
+def test_drag_snaps_to_canvas_center_with_guides_and_ctrl_disables(window, qtbot) -> None:  # type: ignore[no-untyped-def]
+    canvas = window.canvas
+    window.resize(1400, 860)
+    canvas.fit_to_view()
+    node = window.add_node_of_kind("circle")  # rayon 80 : boîte de 160 px
+    window.document.set_node_properties(node.id, {"position.x": 600.0, "position.y": 300.0})
+    qtbot.wait(20)
+    start = canvas.canvas_to_widget(QPointF(600, 300)).toPoint()
+    # 357 px canevas vers la droite : le centre arrive à 957, à 3 px du centre du canevas (960)
+    end = canvas.canvas_to_widget(QPointF(957, 300)).toPoint()
+    QTest.mousePress(canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, start)
+    QTest.mouseMove(canvas, start + (end - start) / 2)
+    QTest.mouseMove(canvas, end)
+    assert canvas.guides and any(g.axis == "x" and g.value == pytest.approx(960.0) for g in canvas.guides)
+    QTest.mouseRelease(canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, end)
+    assert node.position[0] == pytest.approx(960.0) and not canvas.guides
+    # Ctrl maintenu : aucune aimantation, l'objet reste où on le lâche
+    window.document.set_node_properties(node.id, {"position.x": 600.0})
+    qtbot.wait(20)
+    QTest.mousePress(canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ControlModifier, start)
+    QTest.mouseMove(canvas, start + (end - start) / 2)
+    canvas._apply_drag(QPointF(957, 300), Qt.KeyboardModifier.ControlModifier)
+    QTest.mouseRelease(canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ControlModifier, end)
+    assert node.position[0] == pytest.approx(957.0, abs=1.5) and node.position[0] != pytest.approx(960.0)
+    window.act_guides.trigger()  # désactivés depuis le menu Affichage
+    assert canvas.smart_guides is False

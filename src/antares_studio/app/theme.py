@@ -187,6 +187,7 @@ GRID = QColor(255, 255, 255, 28)
 GRID_MAJOR = QColor(255, 255, 255, 60)
 SAFE_ZONE = QColor(255, 193, 7, 110)
 RUBBER_BAND = QColor(79, 195, 247, 60)
+GUIDE = QColor("#FF4FD8")  # guides d'alignement (magenta : visible sur fonds clairs et sombres)
 LOCKED = QColor("#EF5350")
 PLAYHEAD = QColor("#FF5252")
 # Couleurs qui suivent le thème (réaffectées par ``apply_theme``).
