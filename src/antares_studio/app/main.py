@@ -32,6 +32,9 @@ def main(argv: list[str] | None = None) -> int:
     app = create_app(argv)
     from PySide6.QtCore import QTimer
 
+    from antares_studio.app.incident import install_exception_logger
+
+    install_exception_logger()  # erreurs inattendues gardées pour le rapport d'incident (Aide)
     from antares_studio.app.main_window import MainWindow
 
     window = MainWindow()

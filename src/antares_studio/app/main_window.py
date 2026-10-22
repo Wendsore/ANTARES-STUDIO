@@ -118,6 +118,7 @@ ACTION_ICONS: dict[str, str] = {
     "act_welcome": "house",
     "act_shortcuts": "keyboard",
     "act_diag": "wrench",
+    "act_incident": "bug",
     "act_about": "info",
     "act_distribute_h": "align-horizontal-distribute-center",
     "act_distribute_v": "align-vertical-distribute-center",
@@ -391,6 +392,11 @@ class MainWindow(QMainWindow):
         self.act_reset_layout = self._action("Réinitialiser la disposition", self.reset_layout)
         self.act_about = self._action("À &propos d'ANTARES Studio", lambda: AboutDialog(self).exec())
         self.act_diag = self._action("&Diagnostics…", self.show_diagnostics)
+        self.act_incident = self._action(
+            "Créer un &rapport d'incident…",
+            lambda _c=False: self.create_incident_report(),
+            tip="Fichier .zip lisible à joindre à une demande d'aide ; rien n'est envoyé automatiquement",
+        )
         self.act_ffmpeg = self._action("Chemin de &FFmpeg…", self.configure_ffmpeg)
         self.act_help = self._action(
             "&Centre d'aide",
@@ -557,6 +563,7 @@ class MainWindow(QMainWindow):
             m_help.addAction(a)
         m_help.addSeparator()
         m_help.addAction(self.act_diag)
+        m_help.addAction(self.act_incident)
         m_help.addAction(self.act_ffmpeg)
         m_help.addSeparator()
         m_help.addAction(self.act_about)
@@ -1881,6 +1888,33 @@ class MainWindow(QMainWindow):
             return None
         self.reveal_widget(target)
         return Highlighter(target, self)
+
+    def create_incident_report(self, path: str | None = None) -> Path | None:
+        """Écrit le rapport d'incident (.zip) à l'endroit choisi et montre son contenu."""
+        from datetime import datetime
+
+        from antares_studio.app.incident import write_incident_report
+
+        if path is None:
+            default = (
+                Path(self.settings.last_directory()) / f"rapport-antares-{datetime.now():%Y%m%d-%H%M}.zip"
+            )
+            path, _ = QFileDialog.getSaveFileName(
+                self, "Créer un rapport d'incident", str(default), "Archive ZIP (*.zip)"
+            )
+            if not path:
+                return None
+        target = Path(path if path.lower().endswith(".zip") else path + ".zip")
+        root = self.document.paths.root if self.document.paths else None
+        try:
+            files = write_incident_report(
+                target, diagnostics_report(self.settings.ffmpeg_path()), self.document.project, root
+            )
+        except OSError as exc:
+            QMessageBox.warning(self, "Rapport d'incident", f"Impossible d'écrire le rapport : {exc}")
+            return None
+        self.statusBar().showMessage(f"Rapport d'incident créé : {target} ({', '.join(files)})", 10000)
+        return target
 
     def show_diagnostics(self) -> None:
         DiagnosticsDialog(diagnostics_report(self.settings.ffmpeg_path()), self).exec()

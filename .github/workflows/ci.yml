@@ -109,3 +109,38 @@ jobs:
           name: ANTARES-Studio-windows-x64
           path: ANTARES-Studio-windows-x64.zip
           retention-days: 14
+      # Installateur Inno Setup construit sur le même dossier, puis installé, lancé et désinstallé en
+      # silencieux. Non signé : la signature exige un certificat acheté (voir packaging/installer.iss).
+      - name: Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+      - name: Construction de l'installateur
+        shell: pwsh
+        run: |
+          $version = python -c "import antares_studio; print(antares_studio.__version__)"
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$version" packaging\installer.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem dist\installer
+      - name: Installation silencieuse, autotest du programme installé, désinstallation
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist\installer\*.exe | Select-Object -First 1
+          $dir = Join-Path $env:RUNNER_TEMP "antares-installe"
+          $p = Start-Process -FilePath $setup.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER',"/DIR=$dir" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "installation : code $($p.ExitCode)" }
+          $exe = Join-Path $dir "ANTARES Studio.exe"
+          $p = Start-Process -FilePath $exe -ArgumentList '--selftest' -Wait -PassThru -NoNewWindow
+          if ($p.ExitCode -ne 0) { throw "autotest du programme installé : code $($p.ExitCode)" }
+          $menu = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\ANTARES Studio\ANTARES Studio.lnk"
+          if (-not (Test-Path $menu)) { throw "raccourci du menu Démarrer absent : $menu" }
+          $p = Start-Process -FilePath (Join-Path $dir "unins000.exe") -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "désinstallation : code $($p.ExitCode)" }
+          Start-Sleep -Seconds 3
+          if (Test-Path $exe) { throw "programme encore présent après désinstallation" }
+          Write-Output "installation, autotest et désinstallation : OK"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ANTARES-Studio-windows-x64-setup
+          path: dist/installer/*.exe
+          retention-days: 14

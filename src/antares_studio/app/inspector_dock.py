@@ -48,6 +48,14 @@ ASSET_PARAMS: dict[str, tuple[str, str]] = {
 }
 
 
+def compact_combo() -> QComboBox:
+    """Liste déroulante qui rétrécit avec le panneau (texte élidé) : pas de défilement horizontal."""
+    combo = QComboBox()
+    combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+    combo.setMinimumContentsLength(10)
+    return combo
+
+
 class ColorButton(QPushButton):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -269,7 +277,7 @@ class InspectorDock(QWidget):
         self.form.addRow("Fond :", bg)
         from antares_studio.rendering.transitions import TRANSITION_LABELS
 
-        kind = QComboBox()
+        kind = compact_combo()
         kind.setObjectName("scene_transition")
         for k, label in TRANSITION_LABELS.items():
             kind.addItem(label, k)
@@ -294,12 +302,8 @@ class InspectorDock(QWidget):
 
         kind.currentIndexChanged.connect(lambda _i: set_transition())
         tr_dur.editingFinished.connect(set_transition)
-        row = QWidget()
-        lay = QHBoxLayout(row)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.addWidget(kind, 1)
-        lay.addWidget(tr_dur)
-        self.form.addRow("Transition :", row)
+        self.form.addRow("Transition :", kind)
+        self.form.addRow("Durée de la transition :", tr_dur)
         c = self.document.project.canvas
         self.form.addRow(QLabel(f"Canevas : {c.width} × {c.height} px, {float(c.fps):g} images/s"))
         self._build_metadata_form()
@@ -311,7 +315,7 @@ class InspectorDock(QWidget):
         """Métadonnées scientifiques du projet (SCI-07/08) : représentation, échelle, notes, sources."""
         meta = self.document.project.scientific_metadata
         self.form.addRow(QLabel("<b>Métadonnées scientifiques</b>"))
-        repr_box = QComboBox()
+        repr_box = compact_combo()
         # distinction du master prompt §9.3 : schématique / modélisation / simulation / données mesurées
         repr_box.addItem("Schématique (visuel arbitraire)", "schematic")
         repr_box.addItem("Modélisation (hypothèses explicites)", "model")
@@ -329,7 +333,7 @@ class InspectorDock(QWidget):
         to_scale.setChecked(bool(meta.get("to_scale", False)))
         to_scale.setToolTip("Décoché : un avertissement « non à l'échelle » est attendu dans la vidéo.")
         to_scale.toggled.connect(lambda on: self._meta("to_scale", bool(on)))
-        self.form.addRow("", to_scale)
+        self.form.addRow(to_scale)  # sur toute la largeur : pas de défilement horizontal
         notes = QLineEdit(str(meta.get("notes", "")))
         notes.setPlaceholderText("Simplifications, hypothèses…")
         notes.editingFinished.connect(lambda: self._meta("notes", notes.text().strip()))

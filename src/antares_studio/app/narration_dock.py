@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import shutil
 from collections.abc import Callable
+from datetime import date
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -24,7 +26,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from antares_studio.app import icons
 from antares_studio.app.document import ProjectDocument
+from antares_studio.app.recorder import RecordDialog
 from antares_studio.app.settings import AppSettings
 from antares_studio.audio.subtitles import (
     SubtitleFormatError,
@@ -40,11 +44,12 @@ from antares_studio.domain.commands import (
     RemoveAudioClip,
     RemoveSubtitle,
     ReplaceSubtitles,
+    SetAssetLicense,
     SetAudioClipAttr,
     SetProjectSetting,
     SetSubtitleAttr,
 )
-from antares_studio.domain.model import Asset, AudioClip, Subtitle
+from antares_studio.domain.model import Asset, AssetLicense, AudioClip, Subtitle
 from antares_studio.rendering import ffmpeg as ff
 
 ID_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -74,9 +79,12 @@ class AudioTab(QWidget):
         self.import_btn.clicked.connect(self.import_audio)
         self.place_btn = QPushButton("Placer à l'image courante")
         self.place_btn.clicked.connect(self.place_at_current_frame)
+        self.record_btn = QPushButton(icons.icon("mic"), "Enregistrer au micro…")
+        self.record_btn.setObjectName("narration_record")
+        self.record_btn.clicked.connect(lambda _c=False: self.record_narration())
         self.remove_btn = QPushButton("Supprimer")
         self.remove_btn.clicked.connect(self.remove_selected)
-        for b in (self.import_btn, self.place_btn, self.remove_btn):
+        for b in (self.import_btn, self.record_btn, self.place_btn, self.remove_btn):
             buttons.addWidget(b)
         buttons.addStretch(1)
         self.ducking = QCheckBox("Baisser la musique sous la voix")
@@ -90,7 +98,9 @@ class AudioTab(QWidget):
         layout.addLayout(buttons)
         self.table = QTableWidget(0, len(self.COLS))
         self.table.setHorizontalHeaderLabels(list(self.COLS))
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)  # en-têtes lisibles en entier
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.verticalHeader().setVisible(False)
@@ -247,6 +257,32 @@ class AudioTab(QWidget):
         )
         self.document.push(AddAudioClip(scene.id, clip))
         self.settings.set_last_directory(str(path.parent))
+        return clip
+
+    def record_narration(self, dialog: RecordDialog | None = None) -> AudioClip | None:
+        """Enregistre au micro puis ajoute la piste (fiche de provenance : œuvre personnelle)."""
+        if self.document.scene is None:
+            return None
+        if self.document.paths is None:
+            QMessageBox.information(
+                self, "Enregistrer une narration", "Enregistrez d'abord le projet (Ctrl+S)."
+            )
+            return None
+        dlg = dialog or RecordDialog(self)
+        if dialog is None:
+            dlg.exec()
+        if dlg.recorded_path is None:
+            return None
+        clip = self.add_audio_file(dlg.recorded_path)
+        shutil.rmtree(dlg.recorded_path.parent, ignore_errors=True)  # copie faite dans audio/
+        if clip is not None:
+            own = AssetLicense(
+                author="Enregistrement personnel (micro)",
+                license="own-work",
+                redistribution_allowed=True,
+                verified_on=date.today().isoformat(),
+            )
+            self.document.push(SetAssetLicense(clip.asset_id, own))
         return clip
 
     def place_at_current_frame(self) -> None:

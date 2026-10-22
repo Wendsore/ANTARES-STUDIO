@@ -27,6 +27,8 @@ def diagnostics_report(ffmpeg_setting: str = "") -> str:
     else:
         lines.append(f"FFmpeg : {ffmpeg} — {ff.tool_version(ffmpeg)}")
         lines.append(f"  encodeur H.264 (libx264) : {'oui' if ff.has_encoder(ffmpeg, 'libx264') else 'NON'}")
+        for codec, use in (("libvpx-vp9", "WebM"), ("libopus", "son WebM"), ("gif", "GIF animé")):
+            lines.append(f"  encodeur {use} ({codec}) : {'oui' if ff.has_encoder(ffmpeg, codec) else 'non'}")
         probe = ff.find_ffprobe(ffmpeg=ffmpeg)
         lines.append(f"ffprobe : {probe if probe else 'INTROUVABLE (vérification des exports impossible)'}")
     from antares_studio.rendering.blender import blender_version, find_blender

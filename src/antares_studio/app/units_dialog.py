@@ -63,7 +63,9 @@ class UnitsDialog(QDialog):
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.setWordWrap(False)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         for row, const in enumerate(CONSTANTS):
             source = SOURCES[const.source]
@@ -106,6 +108,7 @@ class UnitsDialog(QDialog):
         form.addRow("Résultat :", self.result_label)
         form.addRow("", self.error)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.button(QDialogButtonBox.StandardButton.Close).setText("Fermer")
         self.insert_btn = buttons.addButton("Insérer dans la scène", QDialogButtonBox.ButtonRole.AcceptRole)
         self.insert_btn.setObjectName("units_insert")
         self.insert_btn.setToolTip("Ajoute le résultat comme objet Texte au centre de la vue")

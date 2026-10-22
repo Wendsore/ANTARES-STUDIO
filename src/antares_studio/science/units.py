@@ -27,6 +27,8 @@ SOURCES: dict[str, str] = {
     "G": "CODATA 2018 — https://physics.nist.gov/cgi-bin/cuu/Value?bg",
     "GM": "IAU 2015 B3 — https://www.iau.org/static/resolutions/IAU2015_English.pdf",
     "ly": "IAU : année julienne × c",
+    "pc": "IAU 2015 B2 (1 pc = 648000/π ua) — https://www.iau.org/static/resolutions/IAU2015_English.pdf",
+    "yr": "IAU : année julienne = 365,25 jours de 86 400 s",
 }
 
 
@@ -132,10 +134,10 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant("G", "Constante gravitationnelle", "G", G_SI, "m³ kg⁻¹ s⁻²", "G"),
     Constant("au", "Unité astronomique", "ua", AU_M, "m", "au"),
     Constant("ly", "Année-lumière", "al", LIGHT_YEAR_M, "m", "ly"),
-    Constant("pc", "Parsec", "pc", PARSEC_M, "m", "au"),
+    Constant("pc", "Parsec", "pc", PARSEC_M, "m", "pc"),
     Constant("GM_sun", "Paramètre gravitationnel du Soleil", "GM☉", GM_SUN, "m³ s⁻²", "GM"),
     Constant("GM_earth", "Paramètre gravitationnel de la Terre", "GM⊕", GM_EARTH, "m³ s⁻²", "GM"),
-    Constant("yr", "Année julienne", "a", JULIAN_YEAR_S, "s", "ly"),
+    Constant("yr", "Année julienne", "a", JULIAN_YEAR_S, "s", "yr"),
 )
 
 _SUPERSCRIPT = str.maketrans("-0123456789", "⁻⁰¹²³⁴⁵⁶⁷⁸⁹")
