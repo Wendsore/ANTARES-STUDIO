@@ -30,15 +30,20 @@ def main(argv: list[str] | None = None) -> int:
     if code is not None:
         return code
     app = create_app(argv)
+    from PySide6.QtCore import QTimer
+
     from antares_studio.app.main_window import MainWindow
 
     window = MainWindow()
     window.show()
+    opened = False
     for arg in argv[1:]:
         p = Path(arg)
         if p.exists():
-            window.open_project_path(p)
+            opened = window.open_project_path(p)
             break
+    if not opened and window.settings.show_welcome():
+        QTimer.singleShot(0, window.show_welcome)
     return app.exec()
 
 

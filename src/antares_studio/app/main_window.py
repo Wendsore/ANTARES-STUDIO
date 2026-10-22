@@ -5,24 +5,32 @@ from __future__ import annotations
 import copy
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, Qt, QTimer
-from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
+from PySide6.QtCore import QPointF, QSize, Qt, QTimer
+from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
+    QApplication,
     QDockWidget,
     QFileDialog,
     QInputDialog,
     QLabel,
     QMainWindow,
     QMessageBox,
+    QSizePolicy,
+    QStackedWidget,
+    QTabWidget,
     QToolBar,
+    QWhatsThis,
     QWidget,
 )
 
+from antares_studio.app import icons, theme
 from antares_studio.app.canvas_widget import CanvasWidget
+from antares_studio.app.command_palette import CommandPalette
 from antares_studio.app.diagnostics import diagnostics_report
 from antares_studio.app.dialogs import AboutDialog, DiagnosticsDialog, NewProjectDialog
 from antares_studio.app.document import ProjectDocument
 from antares_studio.app.export_dialog import ExportDialog
+from antares_studio.app.help_center import HelpCenter
 from antares_studio.app.inspector_dock import InspectorDock
 from antares_studio.app.layers_dock import LayersDock
 from antares_studio.app.library_dock import LibraryDock
@@ -31,23 +39,66 @@ from antares_studio.app.preset_dialog import PresetDialog
 from antares_studio.app.provenance_dialog import LicenseInventoryDialog, edit_asset_provenance
 from antares_studio.app.settings import AppSettings
 from antares_studio.app.timeline_dock import TimelineDock
+from antares_studio.app.tutorial_panel import Highlighter, TutorialPanel
 from antares_studio.domain.commands import (
     AddNode,
     AddScene,
     RemoveNode,
     ReplaceTracks,
+    SetAssetLicense,
     SetProjectMetadata,
     SetProperties,
 )
 from antares_studio.domain.ids import new_id
 from antares_studio.domain.kinds import spec_for
-from antares_studio.domain.model import Canvas, Node, Scene
+from antares_studio.domain.model import AssetLicense, Canvas, Node, Scene
 from antares_studio.domain.validation import ProjectValidationError
+from antares_studio.help import topics
+from antares_studio.help.tutorials import TUTORIALS, TUTORIALS_BY_ID, TutorialContext
 from antares_studio.persistence.schema import ProjectFormatError
 from antares_studio.persistence.store import PROJECT_SUFFIX, ProjectStore, resolve_project_root
+from antares_studio.rendering.exporter import ProjectRenderResult
 from antares_studio.resources.licenses import inventory
 from antares_studio.resources.templates import TEMPLATES, create_project, scale_warning_node, template_labels
 from antares_studio.timeline.presets import apply_preset
+
+EXAMPLE_CSV = "planetes-periode-distance.csv"
+# Rubrique d'aide ouverte par F1 selon le panneau actif (nom d'objet du dock ou du widget).
+CONTEXT_TOPICS: dict[str, str] = {
+    "canvas": "canevas",
+    "dock_library": "bibliotheque",
+    "dock_layers": "scenes-et-calques",
+    "dock_inspector": "inspecteur",
+    "dock_timeline": "images-cles",
+    "dock_narration": "narration",
+    "dock_tutorial": "tutoriels",
+}
+# Icônes Lucide des actions (recolorées à chaque changement de thème).
+ACTION_ICONS: dict[str, str] = {
+    "act_new": "file-plus",
+    "act_open": "folder-open",
+    "act_save": "save",
+    "act_export": "clapperboard",
+    "act_inventory": "shield-check",
+    "act_scale_warning": "triangle-alert",
+    "act_undo": "undo-2",
+    "act_redo": "redo-2",
+    "act_delete": "trash-2",
+    "act_duplicate": "copy",
+    "act_group": "group",
+    "act_play": "play",
+    "act_go_start": "skip-back",
+    "act_go_end": "skip-forward",
+    "act_zoom_fit": "scan",
+    "act_grid": "grid-3x3",
+    "act_snap": "magnet",
+    "act_help": "circle-help",
+    "act_palette": "command",
+    "act_welcome": "house",
+    "act_shortcuts": "keyboard",
+    "act_diag": "wrench",
+    "act_about": "info",
+}
 
 
 class MainWindow(QMainWindow):
@@ -55,6 +106,18 @@ class MainWindow(QMainWindow):
         super().__init__(parent)
         self.settings = AppSettings()
         self.store = ProjectStore()
+        app = QApplication.instance()
+        if isinstance(app, QApplication):
+            theme.apply_theme(app, self.settings.theme(), self.settings.font_scale())
+        self.setWindowIcon(icons.app_icon())
+        self.ui_counters: dict[str, int] = {
+            "palette_used": 0,
+            "help_opened": 0,
+            "inventory_opened": 0,
+            "exports": 0,
+            "full_exports": 0,
+        }
+        self.help_center: HelpCenter | None = None
         self.document = ProjectDocument(create_project("Sans titre", Canvas(), "", 20))
         self.setWindowTitle("ANTARES Studio")
         self.resize(1400, 860)
@@ -70,6 +133,15 @@ class MainWindow(QMainWindow):
         self._autosave_timer.timeout.connect(self._autosave)
         self._autosave_timer.start(max(10, self.settings.autosave_interval_s()) * 1000)
         self._restore_layout()
+        self._tutorial_timer = QTimer(self)
+        self._tutorial_timer.setInterval(300)
+        self._tutorial_timer.timeout.connect(self.tutorial.refresh)
+        self._apply_icons()
+        self._set_whats_this()
+        self.statusBar().showMessage(
+            "Astuce : F1 ouvre l'aide, Ctrl+K cherche une commande, Aide > Tutoriels pour apprendre.",
+            12000,
+        )
         QTimer.singleShot(0, self.canvas.fit_to_view)
 
     # --- construction UI ---------------------------------------------------
@@ -108,6 +180,32 @@ class MainWindow(QMainWindow):
         )
         self.tabifyDockWidget(self.timeline_dock, self.narration_dock)
         self.timeline_dock.raise_()
+        self.tutorial = TutorialPanel(self.tutorial_context)
+        self.tutorial.showMeRequested.connect(self.highlight_widget)
+        self.tutorial.actionRequested.connect(self._tutorial_action)
+        self.tutorial.tutorialFinished.connect(self._tutorial_finished)
+        self.tutorial.closeRequested.connect(self._tutorial_closed)
+        self.tutorial_dock = self._dock(
+            "Tutoriel", self.tutorial, Qt.DockWidgetArea.RightDockWidgetArea, "dock_tutorial"
+        )
+        self.splitDockWidget(self.inspector_dock, self.tutorial_dock, Qt.Orientation.Vertical)
+        self.tutorial_dock.hide()
+        for widget, name in (
+            (self.canvas, "canvas"),
+            (self.library.search, "library_search"),
+            (self.library.tabs, "library_tabs"),
+            (self.layers.tree, "layers_tree"),
+            (self.inspector, "inspector"),
+            (self.timeline.view, "timeline_view"),
+            (self.timeline.play_btn, "timeline_play"),
+            (self.narration.audio.import_btn, "narration_import"),
+            (self.narration.audio.table, "narration_table"),
+            (self.narration.subtitles.add_btn, "subtitles_add"),
+            (self.narration.subtitles.table, "subtitles_table"),
+        ):
+            widget.setObjectName(name)
+        for panel, width in ((self.library, 310), (self.layers, 310), (self.inspector, 360)):
+            panel.setMinimumWidth(width)
         self.resizeDocks([self.library_dock, self.layers_dock], [360, 420], Qt.Orientation.Vertical)
         self.resizeDocks([self.inspector_dock], [340], Qt.Orientation.Horizontal)
         self.resizeDocks([self.library_dock, self.layers_dock], [300, 300], Qt.Orientation.Horizontal)
@@ -120,6 +218,7 @@ class MainWindow(QMainWindow):
             self.inspector_dock,
             self.timeline_dock,
             self.narration_dock,
+            self.tutorial_dock,
         )
 
     def _dock(self, title: str, widget: QWidget, area: Qt.DockWidgetArea, name: str) -> QDockWidget:
@@ -149,9 +248,7 @@ class MainWindow(QMainWindow):
         self.act_new = self._action("&Nouveau projet…", self.new_project, QKeySequence.StandardKey.New)
         self.act_open = self._action("&Ouvrir…", self.open_project, QKeySequence.StandardKey.Open)
         self.act_save = self._action("&Enregistrer", self.save_project, QKeySequence.StandardKey.Save)
-        self.act_save_as = self._action(
-            "Enregistrer &sous…", self.save_project_as, QKeySequence.StandardKey.SaveAs
-        )
+        self.act_save_as = self._action("Enregistrer &sous…", self.save_project_as, "Ctrl+Shift+S")
         self.act_export = self._action("E&xporter la vidéo…", self.export_video, "Ctrl+E")
         self.act_inventory = self._action("Inventaire des &licences et crédits…", self.show_inventory)
         self.act_scale_warning = self._action(
@@ -159,8 +256,11 @@ class MainWindow(QMainWindow):
         )
         self.act_quit = self._action("&Quitter", self.close, QKeySequence.StandardKey.Quit)
         self.act_undo = self._action("&Annuler", self.document.undo.undo, QKeySequence.StandardKey.Undo)
-        self.act_redo = self._action("&Rétablir", self.document.undo.redo, QKeySequence.StandardKey.Redo)
-        self.act_delete = self._action("&Supprimer", self.delete_selection, QKeySequence.StandardKey.Delete)
+        self.act_redo = self._action("&Rétablir", self.document.undo.redo, "Ctrl+Y")
+        # Ctrl+Y (Windows) et Ctrl+Maj+Z (Linux, macOS) partout ; « Suppr » seule : sous KDE/GNOME le
+        # raccourci standard Delete inclut Ctrl+D, déjà pris par « Dupliquer » (conflit = aucune action).
+        self.act_redo.setShortcuts([QKeySequence("Ctrl+Y"), QKeySequence("Ctrl+Shift+Z")])
+        self.act_delete = self._action("&Supprimer", self.delete_selection, "Delete")
         self.act_duplicate = self._action("&Dupliquer", self.duplicate_selection, "Ctrl+D")
         self.act_select_all = self._action(
             "&Tout sélectionner", self.select_all, QKeySequence.StandardKey.SelectAll
@@ -197,6 +297,36 @@ class MainWindow(QMainWindow):
         self.act_about = self._action("À &propos d'ANTARES Studio", lambda: AboutDialog(self).exec())
         self.act_diag = self._action("&Diagnostics…", self.show_diagnostics)
         self.act_ffmpeg = self._action("Chemin de &FFmpeg…", self.configure_ffmpeg)
+        self.act_help = self._action(
+            "&Centre d'aide",
+            self.show_context_help,
+            QKeySequence.StandardKey.HelpContents,
+            "Ouvre l'aide à la rubrique du panneau actif",
+        )
+        self.act_whats_this = self._action(
+            "&Qu'est-ce que c'est ?", QWhatsThis.enterWhatsThisMode, QKeySequence.StandardKey.WhatsThis
+        )
+        self.act_palette = self._action(
+            "Rechercher une &commande…", self.show_command_palette, "Ctrl+K", "Toutes les commandes"
+        )
+        self.act_welcome = self._action("&Accueil…", self.show_welcome)
+        self.act_shortcuts = self._action("&Raccourcis clavier", lambda: self.show_help("raccourcis"))
+        self.theme_group = QActionGroup(self)
+        self.theme_actions: dict[str, QAction] = {}
+        for pal in theme.THEMES.values():
+            act = self._action(pal.label, lambda _c=False, n=pal.name: self.set_theme(n))
+            act.setCheckable(True)
+            act.setChecked(pal.name == theme.active().name)
+            self.theme_group.addAction(act)
+            self.theme_actions[pal.name] = act
+        self.scale_group = QActionGroup(self)
+        self.scale_actions: dict[int, QAction] = {}
+        for pct in theme.FONT_SCALES:
+            act = self._action(f"{pct} %", lambda _c=False, v=pct: self.set_font_scale(v))
+            act.setCheckable(True)
+            act.setChecked(pct == theme.font_scale())
+            self.scale_group.addAction(act)
+            self.scale_actions[pct] = act
         for act in (
             self.act_play,
             self.act_frame_prev,
@@ -231,6 +361,8 @@ class MainWindow(QMainWindow):
         m_edit.addSeparator()
         for a in (self.act_group, self.act_ungroup):
             m_edit.addAction(a)
+        m_edit.addSeparator()
+        m_edit.addAction(self.act_palette)
         m_add = mb.addMenu("&Objet")
         for kind in (
             "circle",
@@ -292,8 +424,20 @@ class MainWindow(QMainWindow):
         for dock in self._all_docks():
             m_view.addAction(dock.toggleViewAction())
         m_view.addSeparator()
+        m_theme = m_view.addMenu("&Thème")
+        for act in self.theme_actions.values():
+            m_theme.addAction(act)
+        m_scale = m_view.addMenu("Taille du te&xte")
+        for act in self.scale_actions.values():
+            m_scale.addAction(act)
         m_view.addAction(self.act_reset_layout)
         m_help = mb.addMenu("&Aide")
+        m_help.addAction(self.act_help)
+        self.menu_tutorials = m_help.addMenu("&Tutoriels")
+        self._fill_tutorials_menu()
+        for a in (self.act_shortcuts, self.act_whats_this, self.act_welcome):
+            m_help.addAction(a)
+        m_help.addSeparator()
         m_help.addAction(self.act_diag)
         m_help.addAction(self.act_ffmpeg)
         m_help.addSeparator()
@@ -303,14 +447,41 @@ class MainWindow(QMainWindow):
         tb = QToolBar("Principal", self)
         tb.setObjectName("toolbar_main")
         tb.setMovable(False)
-        for a in (self.act_new, self.act_open, self.act_save, self.act_export):
-            tb.addAction(a)
-        tb.addSeparator()
-        for a in (self.act_undo, self.act_redo):
-            tb.addAction(a)
-        tb.addSeparator()
-        for a in (self.act_zoom_fit, self.act_grid):
-            tb.addAction(a)
+        tb.setIconSize(QSize(20, 20))
+        tb.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        short = {
+            "act_new": "Nouveau",
+            "act_open": "Ouvrir",
+            "act_save": "Enregistrer",
+            "act_export": "Exporter",
+            "act_undo": "Annuler",
+            "act_redo": "Rétablir",
+            "act_zoom_fit": "Ajuster",
+            "act_grid": "Grille",
+            "act_palette": "Commandes",
+            "act_help": "Aide",
+        }
+        groups = (
+            ("act_new", "act_open", "act_save", "act_export"),
+            ("act_undo", "act_redo"),
+            ("act_zoom_fit", "act_grid"),
+        )
+        for gi, group in enumerate(groups):
+            if gi:
+                tb.addSeparator()
+            for name in group:
+                tb.addAction(getattr(self, name))
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        tb.addWidget(spacer)
+        tb.addAction(self.act_palette)
+        tb.addAction(self.act_help)
+        for name, label in short.items():
+            act: QAction = getattr(self, name)
+            act.setIconText(label)
+            keys = act.shortcut().toString(QKeySequence.SequenceFormat.NativeText)
+            act.setToolTip(f"{act.text().replace('&', '').split('  ')[0]}" + (f" ({keys})" if keys else ""))
+        self.toolbar = tb
         self.addToolBar(tb)
 
     def _build_statusbar(self) -> None:
@@ -635,6 +806,10 @@ class MainWindow(QMainWindow):
         self.timeline.pause()
         dlg = ExportDialog(self.document, self.settings, self)
         dlg.exec()
+        if dlg.render_result is not None:
+            self.ui_counters["exports"] += 1
+            if isinstance(dlg.render_result, ProjectRenderResult):
+                self.ui_counters["full_exports"] += 1
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if not self.maybe_save():
@@ -784,6 +959,7 @@ class MainWindow(QMainWindow):
         self.library.set_inventory(inventory(self.document.project))
 
     def show_inventory(self) -> None:
+        self.ui_counters["inventory_opened"] += 1
         LicenseInventoryDialog(self.document, self).exec()
 
     def add_scale_warning(self) -> Node | None:
@@ -886,11 +1062,14 @@ class MainWindow(QMainWindow):
         if scene is None:
             return
         node = scene.find_node(node_id)
-        if node is None or node.kind != "text":
+        if node is None or node.kind not in ("text", "callout", "formula"):
             return
-        text, ok = QInputDialog.getMultiLineText(
-            self, "Modifier le texte", "Texte :", str(node.params.get("text", ""))
+        title, label = (
+            ("Modifier la formule", "Formule (voir Aide > Centre d'aide, rubrique Équations) :")
+            if node.kind == "formula"
+            else ("Modifier le texte", "Texte :")
         )
+        text, ok = QInputDialog.getMultiLineText(self, title, label, str(node.params.get("text", "")))
         if ok:
             self.document.set_node_property(node.id, "params.text", text)
 
@@ -930,7 +1109,276 @@ class MainWindow(QMainWindow):
         self.document.push(AddScene(scene))
         self.document.set_scene(scene.id)
 
+    # --- apparence ----------------------------------------------------------------
+    def _apply_icons(self) -> None:
+        for name, icon_name in ACTION_ICONS.items():
+            getattr(self, name).setIcon(icons.icon(icon_name))
+        self.menu_tutorials.menuAction().setIcon(icons.icon("graduation-cap"))
+        self.timeline.restyle()
+        self.library.refresh_icons()
+
+    def set_theme(self, name: str) -> None:
+        app = QApplication.instance()
+        if not isinstance(app, QApplication) or name not in theme.THEMES:
+            return
+        theme.apply_theme(app, name, theme.font_scale())
+        self.settings.set_theme(name)
+        self._restyle()
+
+    def set_font_scale(self, percent: int) -> None:
+        app = QApplication.instance()
+        if not isinstance(app, QApplication):
+            return
+        theme.apply_theme(app, theme.active().name, percent)
+        self.settings.set_font_scale(percent)
+        self._restyle()
+
+    def _restyle(self) -> None:
+        icons.clear_cache()
+        self._apply_icons()
+        for n, act in self.theme_actions.items():
+            act.setChecked(n == theme.active().name)
+        for pct, act in self.scale_actions.items():
+            act.setChecked(pct == theme.font_scale())
+        self.inspector.rebuild()
+        self.tutorial.restyle()
+        self.canvas.update()
+        self.timeline.view.update()
+        if self.help_center is not None:
+            self.help_center.restyle()
+
+    def _set_whats_this(self) -> None:
+        texts = {
+            self.canvas: "Canevas : l'image de la scène, identique à la vidéo exportée. Clic pour "
+            "sélectionner, glisser pour déplacer, molette pour zoomer. F1 : aide détaillée.",
+            self.library: "Bibliothèque : objets, animations, modèles et ressources. Double-clic pour "
+            "ajouter ou appliquer ; cochez une case pour marquer un favori.",
+            self.layers: "Scènes et objets : liste des scènes, puis des objets de la scène (œil : visible, "
+            "cadenas : verrouillé, double-clic : renommer).",
+            self.inspector: "Inspecteur : propriétés de la sélection. Le losange ◆ pose une image clé à "
+            "l'image courante. Sans sélection : scène et métadonnées scientifiques.",
+            self.timeline: "Timeline : tête de lecture, images clés (losanges), pistes audio et sous-titres. "
+            "Ctrl + molette : zoom temporel.",
+            self.narration: "Narration : clips audio (début, gain, fondus) et sous-titres (SRT/VTT, "
+            "contrôles de lisibilité).",
+            self.tutorial: "Tutoriel : chaque étape se valide toute seule quand l'action est faite.",
+        }
+        for widget, text in texts.items():
+            widget.setWhatsThis(text)
+
     # --- aide ---------------------------------------------------------------------
+    def _shortcuts_markdown(self) -> str:
+        from antares_studio.app.command_palette import menu_actions
+
+        rows = ["| Commande | Raccourci |", "|---|---|"]
+        for path, act in menu_actions(self.menuBar()):
+            keys = ", ".join(
+                k.toString(QKeySequence.SequenceFormat.NativeText) for k in act.shortcuts() if not k.isEmpty()
+            )
+            if keys:
+                rows.append(f"| {path} | {keys} |")
+        return "\n".join(rows)
+
+    def help_extra(self) -> dict[str, str]:
+        return {"raccourcis": self._shortcuts_markdown()}
+
+    def show_help(self, topic_id: str = "") -> HelpCenter:
+        if self.help_center is None:
+            self.help_center = HelpCenter(self.help_extra, self)
+        self.ui_counters["help_opened"] += 1
+        self.help_center.show_topic(topic_id or self.help_center.current_topic or topics.DEFAULT_TOPIC)
+        self.help_center.show()
+        self.help_center.raise_()
+        self.help_center.activateWindow()
+        return self.help_center
+
+    def context_topic(self) -> str:
+        """Rubrique liée au panneau qui a le focus (F1), ou la page d'accueil de l'aide."""
+        w = QApplication.focusWidget()
+        while w is not None:
+            name = w.objectName()
+            if name == "dock_narration" and self.narration.tabs.currentWidget() is self.narration.subtitles:
+                return "sous-titres"
+            if name in CONTEXT_TOPICS:
+                return CONTEXT_TOPICS[name]
+            w = w.parentWidget()
+        return topics.DEFAULT_TOPIC
+
+    def show_context_help(self) -> None:
+        self.show_help(self.context_topic())
+
+    def show_command_palette(self) -> None:
+        self.ui_counters["palette_used"] += 1
+        dlg = CommandPalette(self.menuBar(), self)
+        if dlg.exec() and dlg.triggered is not None:
+            dlg.triggered.trigger()
+
+    def show_welcome(self) -> None:
+        from antares_studio.app.welcome import WelcomeDialog
+        from antares_studio.rendering.ffmpeg import find_ffmpeg
+
+        dlg = WelcomeDialog(
+            self.settings.recent_projects(),
+            self.settings.tutorials_done(),
+            find_ffmpeg(self.settings.ffmpeg_path() or None) is not None,
+            self.settings.show_welcome(),
+            self,
+        )
+        dlg.exec()
+        self.settings.set_show_welcome(dlg.show_at_startup.isChecked())
+        if dlg.choice is None:
+            return
+        kind, arg = dlg.choice
+        if kind == "new":
+            self.new_project()
+        elif kind == "open":
+            self.open_project()
+        elif kind == "recent":
+            self._open_recent(Path(arg))
+        elif kind == "template":
+            self.new_project_from_template(arg)
+        elif kind == "tutorial":
+            self.start_tutorial(arg)
+        elif kind == "help":
+            self.show_help()
+
+    def new_project_from_template(self, template_id: str) -> bool:
+        """Nouveau projet 16:9, 1080p, 30 images/s, 20 s à partir d'un modèle (accueil)."""
+        if template_id not in TEMPLATES or not self.maybe_save():
+            return False
+        title = TEMPLATES[template_id][0].split(" (")[0]
+        self._set_document(ProjectDocument(create_project(title, Canvas(), template_id, 20)))
+        self.statusBar().showMessage(f"Projet « {title} » créé. Pensez à l'enregistrer (Ctrl+S).", 6000)
+        return True
+
+    # --- tutoriels ----------------------------------------------------------------
+    def _fill_tutorials_menu(self) -> None:
+        self.menu_tutorials.clear()
+        done = self.settings.tutorials_done()
+        for t in TUTORIALS:
+            label = ("✓ " if t.id in done else "") + f"{t.title} ({t.minutes} min)"
+            act = self.menu_tutorials.addAction(label)
+            act.setStatusTip(t.summary)
+            act.triggered.connect(lambda _c=False, tid=t.id: self.start_tutorial(tid))
+        self.menu_tutorials.addSeparator()
+        self.menu_tutorials.addAction("À propos des tutoriels…").triggered.connect(
+            lambda: self.show_help("tutoriels")
+        )
+
+    def tutorial_context(self) -> TutorialContext:
+        """État observé par les tutoriels : copie du projet (pour comparer avant/après) et de l'interface."""
+        d = self.document
+        return TutorialContext(
+            project=copy.deepcopy(d.project),
+            scene_id=d.scene_id,
+            selection=tuple(d.selection),
+            frame=d.frame,
+            saved=d.root is not None and not d.is_dirty,
+            has_folder=d.root is not None,
+            ui={
+                "library_query": self.library.search.text(),
+                "zoom": self.canvas.zoom,
+                "playing": self.timeline.playing,
+                "auto_key": d.auto_key,
+                "safe_zones": self.act_safe.isChecked(),
+                "grid": self.act_grid.isChecked(),
+                **self.ui_counters,
+            },
+        )
+
+    def start_tutorial(self, tutorial_id: str) -> bool:
+        tut = TUTORIALS_BY_ID.get(tutorial_id)
+        if tut is None:
+            return False
+        if tut.setup_template is not None:
+            if not self.maybe_save():
+                return False
+            project = create_project(f"Tutoriel — {tut.title[3:]}", Canvas(), tut.setup_template, 20)
+            self._set_document(ProjectDocument(project))
+        self.tutorial_dock.show()
+        self.tutorial_dock.raise_()
+        # sous l'Inspecteur : une hauteur de lecture confortable (le dock s'ouvre sinon écrasé)
+        column = max(400, self.inspector_dock.height() + self.tutorial_dock.height())
+        sizes = [column * 9 // 20, column * 11 // 20]
+        self.resizeDocks([self.inspector_dock, self.tutorial_dock], sizes, Qt.Orientation.Vertical)
+        self.tutorial.start(tut)
+        self._tutorial_timer.start()
+        return True
+
+    def _tutorial_finished(self, tutorial_id: str) -> None:
+        self.settings.mark_tutorial_done(tutorial_id)
+        self._fill_tutorials_menu()
+        tut = TUTORIALS_BY_ID.get(tutorial_id)
+        self.statusBar().showMessage(f"Tutoriel terminé : {tut.title if tut else tutorial_id}. Bravo !", 8000)
+
+    def _tutorial_closed(self) -> None:
+        self._tutorial_timer.stop()
+        self.tutorial_dock.hide()
+
+    def _tutorial_action(self, action: str) -> None:
+        if action == "import_example_csv":
+            self.import_example_data()
+        elif action == "open_help":
+            run = self.tutorial.run
+            self.show_help(run.tutorial.help_topic if run else "")
+
+    def import_example_data(self) -> Node | None:
+        """Importe le CSV d'exemple (NASA) en graphique, avec sa provenance déjà renseignée."""
+        if self.document.scene is None:
+            return None
+        if self.document.paths is None:
+            QMessageBox.information(
+                self, "Données d'exemple", "Enregistrez d'abord le projet : le CSV sera copié dans assets/."
+            )
+            if not self.save_project_as():
+                return None
+        node = self.add_chart_from_csv(topics.EXAMPLES_DIR / EXAMPLE_CSV)
+        if node is None:
+            return None
+        asset_id = str(node.params.get("data_asset_id", ""))
+        scene = self.document.scene
+        if scene is not None:
+            current = scene.find_node(node.id)
+            asset_id = str(current.params.get("data_asset_id", "")) if current else asset_id
+        asset = self.document.project.asset(asset_id)
+        if asset is not None:
+            self.document.push(
+                SetAssetLicense(
+                    asset.id,
+                    AssetLicense(
+                        author="NASA NSSDCA (D. R. Williams), Planetary Fact Sheet",
+                        source_url="https://nssdc.gsfc.nasa.gov/planetary/factsheet/",
+                        license="public-domain",
+                        attribution_required=False,
+                        redistribution_allowed=True,
+                        verified_on="2026-10-22",
+                    ),
+                )
+            )
+            edit_asset_provenance(self.document, asset, self)
+        return node
+
+    def reveal_widget(self, widget: QWidget) -> None:
+        """Rend visible un widget : affiche son panneau et sélectionne les onglets qui le contiennent."""
+        w: QWidget | None = widget
+        while w is not None:
+            parent = w.parentWidget()
+            if isinstance(parent, QStackedWidget) and isinstance(parent.parentWidget(), QTabWidget):
+                tabs = parent.parentWidget()
+                assert isinstance(tabs, QTabWidget)
+                tabs.setCurrentWidget(w)
+            if isinstance(w, QDockWidget):
+                w.show()
+                w.raise_()
+            w = parent
+
+    def highlight_widget(self, object_name: str) -> Highlighter | None:
+        target = self.findChild(QWidget, object_name)
+        if target is None:
+            return None
+        self.reveal_widget(target)
+        return Highlighter(target, self)
+
     def show_diagnostics(self) -> None:
         DiagnosticsDialog(diagnostics_report(self.settings.ffmpeg_path()), self).exec()
 

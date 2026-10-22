@@ -2,6 +2,18 @@
 
 Toutes les évolutions **effectives** (pas les intentions). Format : date, lot, changements observables.
 
+## [0.1.0.dev0] — 2026-10-22 — Design visuel, centre d'aide et tutoriels interactifs
+
+- Nouvelle apparence : thèmes **sombre** et **clair**, **taille du texte** réglable (`Affichage`), icônes sur les actions et la barre d'outils, logo, vignettes réelles des objets et des modèles dans la Bibliothèque, contrastes conformes WCAG 2.2 AA.
+- **Centre d'aide** (`Aide > Centre d'aide`, F1 selon le panneau actif) : 32 rubriques en français, recherche, liens, illustrations ; listes d'objets, d'animations, de profils, de symboles, de modèles et de raccourcis toujours à jour.
+- **Tutoriels interactifs** (`Aide > Tutoriels`) : 7 parcours guidés dont les étapes se valident d'elles-mêmes quand l'action est faite, avec « Montre-moi » et indices ; fichier d'exemple NASA fourni.
+- **Page d'accueil** au démarrage (désactivable) et **recherche de commandes** (Ctrl+K).
+- Export : la vidéo garde le format du projet (un projet vertical 9:16 ou carré n'est plus étiré) ; bouton « Ouvrir le dossier » après l'export.
+- Raccourcis : Suppr pour supprimer (plus de conflit avec Ctrl+D), Ctrl+Y et Ctrl+Maj+Z pour rétablir, Ctrl+Maj+S pour enregistrer sous.
+- Couleurs transparentes affichées correctement dans l'Inspecteur.
+- Les tests n'écrivent plus dans les préférences de l'utilisateur ; le paquet PyInstaller inclut l'aide, les icônes, les exemples et le script Blender, vérifiés par `--selftest`.
+- ADR-0005.
+
 ## [0.1.0.dev0] — 2026-10-21 — Phase 7 (minimal) : planète 3D par Blender facultatif
 
 - `Objet > Planète 3D (Blender, facultatif)…` : si Blender est installé, rend une planète procédurale en rotation (Cycles CPU, fond transparent) en séquence PNG dans le projet et l'insère comme objet **Séquence d'images** animé sur la durée de la scène ; progression, annulation, messages explicites. Sans Blender : diagnostic et aucune fonction 2D affectée.

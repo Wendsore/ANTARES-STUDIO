@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from antares_studio.app import theme
+from antares_studio.app import icons, theme
 from antares_studio.app.audio_player import ScenePlayback
 from antares_studio.app.document import ProjectDocument
 from antares_studio.domain.commands import MoveKeyframe, RemoveKeyframe, SetAudioClipAttr
@@ -132,13 +132,13 @@ class TimelineView(QWidget):
         rect = QRectF(max(LABEL_W, x0), y + 2, min(self.width(), x1) - max(LABEL_W, x0), ROW_H - 4)
         if rect.width() <= 0:
             return
-        color = theme.SELECTION.darker(140) if not clip.muted else theme.TEXT_MUTED.darker(160)
+        color = theme.CLIP if not clip.muted else theme.CLIP_MUTED
         p.fillRect(rect, QBrush(color))
         wf = self.waveforms.get(clip.asset_id)
         if wf is not None and len(wf[0]):
             pk, _dur = wf
             fps = float(self.document.project.canvas.fps)
-            p.setPen(QPen(theme.TEXT, 1))
+            p.setPen(QPen(theme.BLOCK_TEXT, 1))
             mid = y + ROW_H / 2
             half = (ROW_H - 6) / 2
             x = int(rect.left())
@@ -169,8 +169,8 @@ class TimelineView(QWidget):
             if x1 < LABEL_W or x0 > self.width():
                 continue
             rect = QRectF(max(LABEL_W, x0), y + 3, min(self.width(), x1) - max(LABEL_W, x0), ROW_H - 6)
-            p.fillRect(rect, QBrush(theme.KEYFRAME.darker(170)))
-            p.setPen(theme.TEXT)
+            p.fillRect(rect, QBrush(theme.SUBTITLE_BLOCK))
+            p.setPen(theme.BLOCK_TEXT)
             p.drawText(
                 rect.adjusted(3, 0, -3, 0), int(Qt.AlignmentFlag.AlignVCenter), sub.text.split("\n")[0]
             )
@@ -198,7 +198,7 @@ class TimelineView(QWidget):
         # pistes
         y = RULER_H
         font = QFont()
-        font.setPointSize(9)
+        font.setPointSizeF(theme.scaled_pt(9))
         p.setFont(font)
         for i, row in enumerate(self.rows[self.scroll_row :]):
             rect = QRectF(0, y, self.width(), ROW_H)
@@ -246,10 +246,10 @@ class TimelineView(QWidget):
         if end_x < self.width():
             p.fillRect(
                 QRectF(max(LABEL_W, end_x), 0, self.width() - end_x, self.height()),
-                QBrush(theme.CANVAS_SHADOW),
+                QBrush(theme.OUT_OF_RANGE),
             )
         # règle
-        p.fillRect(QRectF(0, 0, self.width(), RULER_H), theme.TRACK_ALT_BG.darker(120))
+        p.fillRect(QRectF(0, 0, self.width(), RULER_H), theme.RULER_BG)
         p.setPen(theme.TEXT_MUTED)
         step = self._tick_step()
         f = (self.scroll_frame // step) * step
@@ -273,7 +273,7 @@ class TimelineView(QWidget):
             p.setPen(Qt.PenStyle.NoPen)
             p.drawPolygon(QPolygonF([QPointF(x - 6, 0), QPointF(x + 6, 0), QPointF(x, 10)]))
         # séparateur des libellés
-        p.setPen(QPen(theme.TEXT_MUTED.darker(150), 1))
+        p.setPen(QPen(theme.TEXT_MUTED, 1))
         p.drawLine(QPointF(LABEL_W, 0), QPointF(LABEL_W, self.height()))
         p.end()
 
@@ -424,15 +424,15 @@ class TimelineDock(QWidget):
         self.ffmpeg_path: str = ""
 
         bar = QHBoxLayout()
-        self.play_btn = QPushButton("▶ Lecture")
+        self.play_btn = QPushButton("Lecture")
         self.play_btn.setToolTip("Espace : lecture / pause")
         self.play_btn.clicked.connect(self.toggle_play)
         self.stop_btn = QToolButton()
-        self.stop_btn.setText("⏮")
+        self.stop_btn.setText("Début")
         self.stop_btn.setToolTip("Retour au début (Début)")
         self.stop_btn.clicked.connect(self.go_start)
         self.end_btn = QToolButton()
-        self.end_btn.setText("⏭")
+        self.end_btn.setText("Fin")
         self.end_btn.setToolTip("Aller à la fin (Fin)")
         self.end_btn.clicked.connect(self.go_end)
         self.loop = QCheckBox("Boucle")
@@ -549,13 +549,24 @@ class TimelineDock(QWidget):
         self.playback.sync(self.document.frame)
         self._clock.restart()
         self._timer.start(15)
-        self.play_btn.setText("⏸ Pause")
+        self.play_btn.setText("Pause")
+        self.play_btn.setIcon(icons.icon("pause"))
 
     def pause(self) -> None:
         self.playing = False
         self._timer.stop()
         self.playback.stop()
-        self.play_btn.setText("▶ Lecture")
+        self.play_btn.setText("Lecture")
+        self.play_btn.setIcon(icons.icon("play"))
+
+    def restyle(self) -> None:
+        """Icônes recolorées après un changement de thème."""
+        self.play_btn.setIcon(icons.icon("pause" if self.playing else "play"))
+        self.stop_btn.setIcon(icons.icon("skip-back"))
+        self.end_btn.setIcon(icons.icon("skip-forward"))
+        for b in (self.stop_btn, self.end_btn):
+            b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.view.update()
 
     def go_start(self) -> None:
         self.pause()

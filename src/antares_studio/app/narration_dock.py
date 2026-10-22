@@ -63,7 +63,7 @@ class AudioTab(QWidget):
             "à l'image courante. L'original n'est jamais modifié."
         )
         hint.setWordWrap(True)
-        hint.setStyleSheet("color: #90A4AE; font-size: 11px;")
+        hint.setProperty("role", "hint")
         layout.addWidget(hint)
         buttons = QHBoxLayout()
         self.import_btn = QPushButton("Importer une narration…")
@@ -267,7 +267,7 @@ class SubtitlesTab(QWidget):
         layout.addWidget(self.table, 1)
         self.diag = QLabel("")
         self.diag.setWordWrap(True)
-        self.diag.setStyleSheet("color: #FFB74D; font-size: 11px;")
+        self.diag.setProperty("role", "warning")
         layout.addWidget(self.diag)
         document.changed.connect(self.refresh)
         document.sceneChanged.connect(lambda _s: self.refresh())

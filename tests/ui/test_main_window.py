@@ -302,10 +302,12 @@ def test_ui13_export_dialog_runs_in_background_and_verifies(  # type: ignore[no-
     dlg.profile.setCurrentIndex(dlg.profile.findData("draft_720p"))
     out = tmp_path / "export test.mp4"
     dlg.path_edit.setText(str(out))
+    assert dlg.open_folder_btn.isHidden()
     dlg.start()
     qtbot.waitUntil(lambda: dlg._worker is None, timeout=60000)
     assert dlg.render_result is not None, dlg.status.text()
     assert out.is_file()
+    assert not dlg.open_folder_btn.isHidden()  # « Ouvrir le dossier » proposé après un export réussi
     assert dlg.render_result.probe.nb_frames == 20
     manifest = json.loads(dlg.render_result.manifest_path.read_text(encoding="utf-8"))
     assert manifest["plan"]["width"] == 1280
@@ -335,7 +337,9 @@ def test_ui13_export_cancel_leaves_no_file(  # type: ignore[no-untyped-def]
 def test_store_recent_and_settings_isolated(window) -> None:  # type: ignore[no-untyped-def]
     import os
 
-    assert os.environ.get("ANTARES_TEST_SETTINGS")
+    folder = Path(os.environ["ANTARES_SETTINGS_DIR"]).resolve()
+    stored = Path(window.settings._s.fileName()).resolve()
+    assert folder in stored.parents, f"préférences réelles touchées : {stored}"
     window.settings.add_recent(Path("/tmp/a.antares"))
     assert window.settings.recent_projects()[0] == Path("/tmp/a.antares")
 

@@ -13,6 +13,8 @@ from enum import Enum
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
     QBrush,
+    QColor,
+    QFont,
     QKeyEvent,
     QMouseEvent,
     QPainter,
@@ -232,6 +234,9 @@ class CanvasWidget(QWidget):
                 subtitle_style=self.document.project.subtitle_style,
             )
             painter.restore()
+        scene = self.document.scene
+        if scene is not None and not scene.nodes:
+            self._paint_empty_hint(painter, canvas_rect)
         if self.show_grid:
             self._paint_grid(painter, canvas_rect)
         if self.show_safe_zones:
@@ -243,6 +248,29 @@ class CanvasWidget(QWidget):
             painter.setBrush(QBrush(theme.RUBBER_BAND))
             painter.drawRect(self._rubber)
         painter.end()
+
+    EMPTY_HINT = (
+        "Scène vide\n\n"
+        "Double-cliquez sur un objet de la Bibliothèque (à gauche) pour l'ajouter,\n"
+        "ou un modèle de l'onglet « Modèles » pour une scène prête à l'emploi.\n\n"
+        "Aide > Tutoriels : apprendre pas à pas · F1 : aide · Ctrl+K : toutes les commandes"
+    )
+
+    def _paint_empty_hint(self, painter: QPainter, canvas_rect: QRectF) -> None:
+        """Rappel des premiers gestes sur une scène vide (éditeur seulement, jamais exporté)."""
+        if canvas_rect.width() < 240 or canvas_rect.height() < 140:
+            return
+        painter.save()
+        font = QFont(painter.font())
+        font.setPointSizeF(theme.scaled_pt(11))
+        painter.setFont(font)
+        painter.setPen(QColor(255, 255, 255, 170))
+        painter.drawText(
+            canvas_rect.adjusted(24, 24, -24, -24),
+            int(Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap),
+            self.EMPTY_HINT,
+        )
+        painter.restore()
 
     def _paint_grid(self, painter: QPainter, rect: QRectF) -> None:
         step = self.grid_step * self.zoom

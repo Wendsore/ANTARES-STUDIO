@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
@@ -18,8 +19,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from antares_studio.app import theme, thumbnails
 from antares_studio.domain.kinds import KINDS
 from antares_studio.resources.licenses import STATUS_COMPLETE, InventoryRow, choice_for
+from antares_studio.resources.templates import TEMPLATES
 from antares_studio.timeline.presets import PRESETS
 
 ID_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -73,6 +76,7 @@ class LibraryDock(QWidget):
         layout.addWidget(self.tabs, 1)
 
         self.objects = QListWidget()
+        self.objects.setIconSize(QSize(32, 32))
         for cat, kinds in CATEGORIES.items():
             header = QListWidgetItem(cat)
             header.setFlags(Qt.ItemFlag.NoItemFlags)
@@ -94,6 +98,7 @@ class LibraryDock(QWidget):
         )
 
         self.presets = QListWidget()
+        self.presets.setIconSize(QSize(22, 22))
         for pid, spec in PRESETS.items():
             item = QListWidgetItem(spec.label)
             item.setData(ID_ROLE, pid)
@@ -108,6 +113,8 @@ class LibraryDock(QWidget):
         )
 
         self.templates = QListWidget()
+        self.templates.setIconSize(QSize(96, 54))
+        self.templates.setWordWrap(True)
         for tid, label in templates.items():
             item = QListWidgetItem(label)
             item.setData(ID_ROLE, tid)
@@ -177,7 +184,8 @@ class LibraryDock(QWidget):
             item.setData(0, ID_ROLE, row.asset.id)
             item.setToolTip(0, f"{row.asset.path}\nUtilisée par : {', '.join(row.used_by) or '—'}")
             if row.status != STATUS_COMPLETE:
-                item.setForeground(1, Qt.GlobalColor.yellow)
+                item.setForeground(1, theme.WARNING)
+                item.setText(1, "⚠ " + row.status)
             self.assets.addTopLevelItem(item)
         self.tabs.setTabText(3, f"Ressources ({len(rows)})" if rows else "Ressources")
 
@@ -192,10 +200,29 @@ class LibraryDock(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         label = QLabel(hint)
         label.setWordWrap(True)
-        label.setStyleSheet("color: #90A4AE; font-size: 11px;")
+        label.setProperty("role", "hint")
         lay.addWidget(label)
         lay.addWidget(widget, 1)
         return box
+
+    def refresh_icons(self) -> None:
+        """Vignettes réelles (objets, modèles) et icônes d'animation, aux couleurs du thème courant."""
+        thumbnails.clear_cache()
+        for i in range(self.objects.count()):
+            item = self.objects.item(i)
+            kind = item.data(ID_ROLE)
+            if kind:
+                item.setIcon(thumbnails.kind_icon(str(kind), 32))
+        for i in range(self.presets.count()):
+            item = self.presets.item(i)
+            item.setIcon(thumbnails.preset_icon(str(item.data(ID_ROLE))))
+        for i in range(self.templates.count()):
+            item = self.templates.item(i)
+            if not item.icon().isNull():
+                continue
+            tid = str(item.data(ID_ROLE))
+            if tid in TEMPLATES:
+                item.setIcon(QIcon(thumbnails.template_pixmap(tid, 96, 54)))
 
     def _filter(self) -> None:
         q = self.search.text().strip().casefold()

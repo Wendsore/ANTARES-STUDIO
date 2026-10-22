@@ -5,7 +5,8 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, QThread, Signal
+from PySide6.QtCore import QObject, Qt, QThread, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from antares_studio.app import icons, theme
 from antares_studio.app.document import ProjectDocument
 from antares_studio.app.settings import AppSettings
 from antares_studio.rendering import ffmpeg as ff
@@ -133,9 +135,11 @@ class ExportDialog(QDialog):
         self.ffmpeg_label = QLabel(
             f"FFmpeg : {ffmpeg}"
             if ffmpeg
-            else "FFmpeg : introuvable — installez-le ou renseignez son chemin (Préférences)."
+            else "FFmpeg : introuvable — installez-le, puis indiquez son emplacement avec "
+            "Aide > Chemin de FFmpeg… (voir Aide > Centre d'aide, rubrique Installation)."
         )
         self.ffmpeg_label.setWordWrap(True)
+        self.ffmpeg_label.setProperty("role", "hint" if ffmpeg else "warning")
         form.addRow(self.ffmpeg_label)
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
@@ -143,12 +147,18 @@ class ExportDialog(QDialog):
         self.status = QLabel("Prêt.")
         self.status.setWordWrap(True)
         buttons = QHBoxLayout()
-        self.start_btn = QPushButton("Exporter")
+        self.start_btn = QPushButton(icons.icon("clapperboard", theme.active().on_accent), "Exporter")
+        self.start_btn.setProperty("role", "primary")
         self.start_btn.setDefault(True)
         self.start_btn.clicked.connect(self.start)
         self.start_btn.setEnabled(ffmpeg is not None)
         self.cancel_btn = QPushButton("Annuler")
         self.cancel_btn.clicked.connect(self._cancel_or_close)
+        self.open_folder_btn = QPushButton(icons.icon("folder-open"), "Ouvrir le dossier")
+        self.open_folder_btn.setToolTip("Affiche la vidéo exportée dans l'explorateur de fichiers")
+        self.open_folder_btn.clicked.connect(self.open_output_folder)
+        self.open_folder_btn.setVisible(False)
+        buttons.addWidget(self.open_folder_btn)
         buttons.addStretch(1)
         buttons.addWidget(self.start_btn)
         buttons.addWidget(self.cancel_btn)
@@ -248,6 +258,13 @@ class ExportDialog(QDialog):
             f"{pr.duration:.2f} s{', audio' if pr.has_audio else ''}.\n{result.output_path}"
         )
         self.settings.set_last_directory(str(result.output_path.parent))
+        self.open_folder_btn.setVisible(True)
+
+    def open_output_folder(self) -> bool:
+        """Ouvre le dossier de la dernière vidéo exportée dans le gestionnaire de fichiers du système."""
+        if self.render_result is None:
+            return False
+        return QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.render_result.output_path.parent)))
 
     def _on_failed(self, message: str, details: str) -> None:
         self._finish_thread()
