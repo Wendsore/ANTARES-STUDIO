@@ -1,0 +1,227 @@
+"""Rubriques du centre d'aide : fichiers Markdown locaux + sections générées depuis le code.
+
+Les sections générées (``<!-- auto:objets -->`` …) sont produites à partir des catalogues réels
+(types d'objets, animations, profils d'export, symboles des équations, modèles) : elles ne peuvent
+pas diverger du logiciel. La liste des raccourcis, qui dépend de la fenêtre Qt, est fournie par
+l'appelant via ``extra={"raccourcis": ...}``.
+"""
+
+from __future__ import annotations
+
+import re
+import unicodedata
+from dataclasses import dataclass
+from pathlib import Path
+
+HELP_DIR = Path(__file__).resolve().parent.parent / "resources" / "help"
+EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "resources" / "examples"
+AUTO = re.compile(r"<!--\s*auto:([a-z_-]+)\s*-->")
+LINK = re.compile(r"(?<!!)\[[^\]]*\]\((?!https?:|mailto:)([^)#\s]+\.md)(?:#[^)]*)?\)")
+
+
+@dataclass(frozen=True)
+class Topic:
+    id: str
+    section: str
+    title: str
+    keywords: str = ""  # synonymes pour la recherche
+
+
+TOPICS: tuple[Topic, ...] = (
+    Topic("bienvenue", "Bien démarrer", "Bienvenue dans ANTARES Studio", "accueil présentation"),
+    Topic("installation", "Bien démarrer", "Installation, FFmpeg et diagnostics", "installer ffmpeg windows"),
+    Topic("interface", "Bien démarrer", "L'espace de travail", "panneaux fenêtre dock menus"),
+    Topic("tutoriels", "Bien démarrer", "Apprendre avec les tutoriels", "tutoriel guide apprendre"),
+    Topic("premiere-video", "Bien démarrer", "Parcours complet : votre première vidéo", "p1 lune exemple"),
+    Topic("projets", "Projets", "Projets, fichiers et dossiers", "ouvrir enregistrer nouveau antares"),
+    Topic("sauvegarde", "Projets", "Sauvegarde automatique et récupération", "autosave crash panne"),
+    Topic("canevas", "Créer", "Le canevas : sélectionner, déplacer, zoomer", "poignées zoom grille"),
+    Topic("objets", "Créer", "Catalogue des objets", "forme cercle texte flèche"),
+    Topic("inspecteur", "Créer", "L'Inspecteur", "propriétés couleur position"),
+    Topic("scenes-et-calques", "Créer", "Scènes, calques et groupes", "ordre plan visibilité verrou"),
+    Topic("bibliotheque", "Créer", "La Bibliothèque et les favoris", "recherche favori"),
+    Topic("modeles", "Créer", "Modèles pédagogiques", "template gabarit"),
+    Topic("animations", "Animer", "Animations prédéfinies", "preset orbite apparition"),
+    Topic("images-cles", "Animer", "Images clés et Timeline", "keyframe clé lecture"),
+    Topic("narration", "Son et texte", "Narration audio", "voix son audio mp3 wav"),
+    Topic("sous-titres", "Son et texte", "Sous-titres", "srt vtt accessibilité"),
+    Topic(
+        "rigueur-scientifique",
+        "Sciences",
+        "Rigueur scientifique : représentation, échelle, sources",
+        "échelle",
+    ),
+    Topic("equations", "Sciences", "Équations", "formule latex maths"),
+    Topic("graphiques", "Sciences", "Graphiques de données (CSV)", "csv courbe données tableur"),
+    Topic("kepler", "Sciences", "Orbites de Kepler et unités", "orbite ellipse verlet unités"),
+    Topic("planete-3d", "Sciences", "Planète 3D avec Blender (facultatif)", "blender 3d planète"),
+    Topic("images", "Ressources", "Images importées", "png svg jpeg photo"),
+    Topic("provenance-et-licences", "Ressources", "Provenance et licences", "licence droits auteur"),
+    Topic("credits", "Ressources", "Crédits", "générique sources"),
+    Topic("export-video", "Exporter", "Exporter la vidéo", "mp4 rendu export youtube"),
+    Topic("ligne-de-commande", "Exporter", "Ligne de commande", "cli terminal selftest"),
+    Topic("raccourcis", "Référence", "Raccourcis clavier", "clavier touches"),
+    Topic("personnalisation", "Référence", "Thème, taille du texte et disposition", "clair sombre police"),
+    Topic("depannage", "Référence", "Dépannage et messages d'erreur", "erreur problème bug"),
+    Topic("glossaire", "Référence", "Glossaire", "définition vocabulaire"),
+    Topic("limites", "Référence", "Ce qui n'est pas encore possible", "limites feuille de route"),
+)
+TOPICS_BY_ID: dict[str, Topic] = {t.id: t for t in TOPICS}
+DEFAULT_TOPIC = "bienvenue"
+
+
+def sections() -> list[tuple[str, list[Topic]]]:
+    out: list[tuple[str, list[Topic]]] = []
+    for t in TOPICS:
+        if not out or out[-1][0] != t.section:
+            out.append((t.section, []))
+        out[-1][1].append(t)
+    return out
+
+
+def topic_path(topic_id: str) -> Path:
+    return HELP_DIR / f"{topic_id}.md"
+
+
+def raw_markdown(topic_id: str) -> str:
+    return topic_path(topic_id).read_text(encoding="utf-8")
+
+
+def topic_markdown(topic_id: str, extra: dict[str, str] | None = None) -> str:
+    """Markdown d'une rubrique, sections automatiques développées ; ``KeyError`` si elle n'existe pas."""
+    if topic_id not in TOPICS_BY_ID:
+        raise KeyError(topic_id)
+    given = extra or {}
+
+    def expand(m: re.Match[str]) -> str:
+        key = m.group(1)
+        if key in given:
+            return given[key]
+        gen = GENERATED.get(key)
+        return gen() if gen else "*(section indisponible dans cette version)*"
+
+    return AUTO.sub(expand, raw_markdown(topic_id))
+
+
+def internal_links(markdown: str) -> list[str]:
+    """Rubriques citées par des liens relatifs ``[texte](rubrique.md)``."""
+    return [m.group(1).removesuffix(".md") for m in LINK.finditer(markdown)]
+
+
+# --- recherche --------------------------------------------------------------------------------------
+def fold(text: str) -> str:
+    """Minuscules sans accents, pour une recherche tolérante (« echelle » trouve « Échelle »)."""
+    return "".join(c for c in unicodedata.normalize("NFKD", text.casefold()) if not unicodedata.combining(c))
+
+
+def search(query: str, extra: dict[str, str] | None = None) -> list[tuple[Topic, int]]:
+    """Rubriques contenant tous les mots de ``query`` ; score : titre (10) > mots-clés (5) > texte (1)."""
+    words = [w for w in fold(query).split() if len(w) >= 2]
+    if not words:
+        return []
+    results: list[tuple[Topic, int]] = []
+    for t in TOPICS:
+        title, keys = fold(t.title), fold(t.keywords)
+        try:
+            body = fold(topic_markdown(t.id, extra))
+        except OSError:
+            body = ""
+        score = 0
+        for w in words:
+            s = 10 * title.count(w) + 5 * keys.count(w) + body.count(w)
+            if s == 0:
+                score = 0
+                break
+            score += s
+        if score:
+            results.append((t, score))
+    return sorted(results, key=lambda r: -r[1])
+
+
+def snippet(topic_id: str, query: str, width: int = 90) -> str:
+    """Extrait du texte autour de la première occurrence d'un mot de ``query`` (sans balises Markdown)."""
+    text = re.sub(r"[#*`>|_\[\]]", "", topic_markdown(topic_id))
+    text = re.sub(r"\(([^)]*\.md|https?://[^)]*)\)", "", text)
+    text = re.sub(r"\s+", " ", text)
+    folded = fold(text)
+    words = [w for w in fold(query).split() if len(w) >= 2]
+    pos = min((folded.find(w) for w in words if folded.find(w) >= 0), default=-1)
+    if pos < 0:
+        return text[:width].strip() + "…"
+    start = max(0, pos - width // 3)
+    return ("…" if start else "") + text[start : start + width].strip() + "…"
+
+
+# --- sections générées ------------------------------------------------------------------------------
+def _objects() -> str:
+    from antares_studio.domain.kinds import KINDS
+
+    lines = ["| Objet | Réglages propres | Animables |", "|---|---|---|"]
+    for spec in KINDS.values():
+        params = ", ".join(p.label or p.name for p in spec.params) or "—"
+        anim = ", ".join(p.label or p.name for p in (*spec.params, *spec.style) if p.animatable) or "—"
+        lines.append(f"| **{spec.label}** | {params} | {anim} |")
+    return "\n".join(lines)
+
+
+def _animations() -> str:
+    from antares_studio.timeline.presets import PRESETS
+
+    out = []
+    for spec in PRESETS.values():
+        params = ", ".join(p.label for p in spec.params)
+        out.append(f"### {spec.label}\n\n{spec.description}\n\n*Réglages :* {params}.\n")
+    return "\n".join(out)
+
+
+def _profiles() -> str:
+    from antares_studio.rendering.plan import PROFILES
+
+    lines = [
+        "| Profil | Image | Qualité (CRF, plus bas = meilleur) | Vitesse d'encodage |",
+        "|---|---|---|---|",
+    ]
+    for p in PROFILES.values():
+        lines.append(f"| **{p.label}** | {p.width} × {p.height} | {p.crf} | {p.preset} |")
+    return "\n".join(lines)
+
+
+def _symbols() -> str:
+    from antares_studio.science.formula import SYMBOLS
+
+    items = [f"`\\{k}` → {v}" for k, v in SYMBOLS.items()]
+    rows = ["| Commande | | Commande | | Commande | |", "|---|---|---|---|---|---|"]
+    for i in range(0, len(items), 3):
+        chunk = [x.split(" → ") for x in items[i : i + 3]]
+        cells = [c for pair in chunk for c in pair]
+        cells += [""] * (6 - len(cells))
+        rows.append("| " + " | ".join(cells) + " |")
+    return "\n".join(rows)
+
+
+def _templates() -> str:
+    from antares_studio.resources.templates import TEMPLATES
+
+    return "\n".join(f"- **{label}**" for label, _builder in TEMPLATES.values())
+
+
+def _example_files() -> str:
+    files = sorted(p.name for p in EXAMPLES_DIR.glob("*.csv"))
+    return "\n".join(f"- `{name}`" for name in files) or "- (aucun)"
+
+
+def _tutorials() -> str:
+    from antares_studio.help.tutorials import TUTORIALS
+
+    return "\n".join(f"- **{t.title}** ({t.minutes} min) — {t.summary}" for t in TUTORIALS)
+
+
+GENERATED = {
+    "objets": _objects,
+    "animations": _animations,
+    "profils": _profiles,
+    "symboles": _symbols,
+    "modeles": _templates,
+    "exemples": _example_files,
+    "tutoriels": _tutorials,
+}

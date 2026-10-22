@@ -20,7 +20,13 @@ datas = [
     (str(ROOT / "README.md"), "."),
     (str(ROOT / "CHANGELOG.md"), "."),
 ]
-datas += collect_data_files("antares_studio", includes=["py.typed"])
+# Ressources lues comme fichiers à l'exécution : aide (Markdown, images), icônes SVG, exemples, script
+# Blender (exécuté par Blender, donc à livrer en .py et pas seulement dans l'archive Python).
+datas += collect_data_files("antares_studio", includes=["py.typed", "resources/**/*"], excludes=["**/__pycache__/**"])
+# ``collect_data_files`` ignore les .py : le script Blender est ajouté explicitement.
+datas.append(
+    (str(SRC / "antares_studio" / "resources" / "blender" / "planete.py"), "antares_studio/resources/blender")
+)
 binaries = []
 if BUNDLED_FFMPEG.is_dir():
     for f in BUNDLED_FFMPEG.iterdir():
@@ -32,7 +38,7 @@ a = Analysis(
     pathex=[str(SRC)],
     binaries=binaries,
     datas=datas,
-    hiddenimports=["antares_studio.app.main_window", "antares_studio.app.cli"],
+    hiddenimports=["antares_studio.app.main_window", "antares_studio.app.cli", "PySide6.QtSvg"],
     hookspath=[],
     runtime_hooks=[],
     excludes=[

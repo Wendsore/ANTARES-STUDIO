@@ -57,9 +57,16 @@ class ColorButton(QPushButton):
         self._value = v.upper()
         r, g, b, a = parse_color(self._value)
         lum = 0.299 * r + 0.587 * g + 0.114 * b
-        fg = "#000000" if lum > 0.55 and a > 0.4 else "#FFFFFF"
-        self.setText(self._value)
-        self.setStyleSheet(f"background-color: {self._value}; color: {fg}; border: 1px solid #666;")
+        # les couleurs du projet sont #RRGGBB[AA] ; le CSS de Qt lirait #AARRGGBB : on passe par rgba()
+        fg = theme.active().text if a < 0.4 else "#000000" if lum > 0.55 else "#FFFFFF"
+        self.setText("Transparent" if a == 0 else self._value)
+        self.setToolTip(f"{self._value} — clic : choisir une couleur (transparence comprise)")
+        border = theme.active().control_border
+        rgba = f"rgba({round(r * 255)}, {round(g * 255)}, {round(b * 255)}, {round(a * 255)})"
+        self.setStyleSheet(
+            f"background-color: {rgba}; color: {fg}; border: 1px solid {border};"
+            " border-radius: 5px; padding: 3px 6px;"
+        )
 
     def _pick(self) -> None:
         r, g, b, a = parse_color(self._value)
@@ -406,7 +413,7 @@ class InspectorDock(QWidget):
                     if on_key
                     else theme.KEYFRAME.name()
                     if has_track
-                    else "#90A4AE"
+                    else theme.TEXT_MUTED.name()
                 )
                 btn.setStyleSheet(f"color: {color}; font-weight: bold;")
         finally:

@@ -40,6 +40,31 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _check_resources(log: list[str]) -> bool:
+    """Ressources livrées avec l'application : aide, icônes (rendu SVG), exemple CSV, script Blender.
+
+    Dans le paquet PyInstaller, une ressource oubliée dans la spécification n'apparaît qu'ici.
+    """
+    from antares_studio.app import icons
+    from antares_studio.help import topics
+
+    missing = [t.id for t in topics.TOPICS if not topics.topic_path(t.id).is_file()]
+    img = icons.render_svg("play", 24, "#FFFFFF")
+    drawn = any(img.pixelColor(x, y).alpha() > 0 for x in range(24) for y in range(24))
+    extra = [
+        topics.EXAMPLES_DIR / "planetes-periode-distance.csv",
+        topics.HELP_DIR / "images" / "interface.png",
+        Path(icons.ICON_DIR.parent) / "blender" / "planete.py",
+    ]
+    absent = [p.name for p in extra if not p.is_file()]
+    if missing or not drawn or absent:
+        detail = ", ".join([*missing, *absent] + ([] if drawn else ["icônes SVG non rendues"]))
+        log.append(f"ÉCHEC : ressources manquantes ({detail})")
+        return False
+    log.append(f"Ressources : {len(topics.TOPICS)} rubriques d'aide, icônes, exemples OK")
+    return True
+
+
 def run_selftest(out: list[str] | None = None) -> int:
     """Crée, enregistre, rouvre et rend un projet modèle ; exporte 10 images si FFmpeg est présent."""
     from antares_studio.app.main import create_app
@@ -58,7 +83,7 @@ def run_selftest(out: list[str] | None = None) -> int:
 
     log.append(diagnostics_report())
     log.append(f"Plateforme Qt : {app.platformName()}")
-    ok = True
+    ok = _check_resources(log)
     with tempfile.TemporaryDirectory(prefix="antares-selftest-") as tmp:
         project = create_project("Autotest", Canvas(1920, 1080, 30, 1), "moon_phases", 2)
         store = ProjectStore()

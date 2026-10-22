@@ -109,7 +109,10 @@ class AboutDialog(QDialog):
             "  The Qt Company (https://code.qt.io) et sur demande auprès du distributeur d'ANTARES Studio.\n"
             "- FFmpeg (exécutable externe, https://ffmpeg.org) pour l'encodage vidéo ; licence LGPL/GPL\n"
             "  selon le build installé sur votre machine.\n"
-            "- NumPy (licence BSD).\n\n"
+            "- NumPy (licence BSD).\n"
+            "- Icônes Lucide 1.51.0 (https://lucide.dev), licence ISC ; icônes dérivées de Feather sous\n"
+            "  licence MIT. Texte complet : resources/icons/LICENSE-lucide.txt.\n"
+            "- Données d'exemple des planètes : NASA Planetary Fact Sheet (domaine public).\n\n"
             "Licence d'ANTARES Studio : non encore décidée (voir README)."
         )
         layout = QVBoxLayout(self)

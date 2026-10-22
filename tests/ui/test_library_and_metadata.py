@@ -69,7 +69,9 @@ def test_provenance_dialog_inventory_and_sources(window, qtbot, tmp_path: Path) 
     asset = import_asset(window.document, src, kind="image")
     qtbot.wait(20)
     assert window.library.assets.topLevelItemCount() == 1
-    assert window.library.assets.topLevelItem(0).text(1) == "provenance manquante"
+    assert (
+        window.library.assets.topLevelItem(0).text(1) == "⚠ provenance manquante"
+    )  # sens doublé par un symbole, pas seulement la couleur
     # fiche de provenance : la licence CC BY coche l'attribution par défaut
     dlg = ProvenanceDialog(asset, window)
     qtbot.addWidget(dlg)

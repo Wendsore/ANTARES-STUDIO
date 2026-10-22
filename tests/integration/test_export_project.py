@@ -86,3 +86,15 @@ def test_export_project_without_scene_is_an_error(qapp) -> None:  # type: ignore
     project.scenes.clear()
     with pytest.raises(RenderError):
         export_project(project, "draft_720p", "/tmp/x.mp4")
+
+
+@needs_ffmpeg
+def test_vertical_project_exports_vertical_video(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    from antares_studio.rendering.exporter import export_video
+    from antares_studio.rendering.plan import build_render_plan
+
+    project = create_project("Vertical", Canvas(1080, 1920, 30, 1), "intro", 1)
+    project.scenes[0].duration_frames = 6
+    plan = build_render_plan(project, project.scenes[0].id, "draft_720p", str(tmp_path / "v.mp4"))
+    result = export_video(project, plan, write_manifest=False)
+    assert (result.probe.width, result.probe.height) == (720, 1280)

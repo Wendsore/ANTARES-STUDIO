@@ -16,4 +16,4 @@ def pytest_configure(config):  # type: ignore[no-untyped-def]
     tmp = tempfile.mkdtemp(prefix="antares-qsettings-")
     QSettings.setDefaultFormat(QSettings.Format.IniFormat)
     QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, tmp)
-    os.environ["ANTARES_TEST_SETTINGS"] = tmp
+    os.environ["ANTARES_SETTINGS_DIR"] = tmp  # lu par AppSettings et hérité par les sous-processus CLI

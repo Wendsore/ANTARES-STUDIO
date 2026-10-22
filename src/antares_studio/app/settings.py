@@ -1,7 +1,8 @@
-"""Préférences locales (QSettings) : récents, disposition, chemin FFmpeg. Aucune donnée envoyée nulle part."""
+"""Préférences locales (QSettings) : récents, disposition, FFmpeg, thème, aide. Rien n'est envoyé en ligne."""
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from PySide6.QtCore import QByteArray, QSettings
@@ -9,11 +10,28 @@ from PySide6.QtCore import QByteArray, QSettings
 ORG = "Wendsore"
 APP = "ANTARES Studio"
 MAX_RECENT = 10
+SETTINGS_DIR_ENV = "ANTARES_SETTINGS_DIR"
+
+
+def _open_settings() -> QSettings:
+    """Emplacement natif du système, sauf si ``ANTARES_SETTINGS_DIR`` désigne un dossier explicite.
+
+    Le constructeur ``QSettings(organisation, application)`` ignore ``setDefaultFormat`` et ``setPath`` :
+    les tests et scripts passent donc par la variable d'environnement, héritée par les sous-processus.
+    """
+    folder = os.environ.get(SETTINGS_DIR_ENV, "").strip()
+    if folder:
+        Path(folder).mkdir(parents=True, exist_ok=True)
+        return QSettings(str(Path(folder) / "antares-studio.ini"), QSettings.Format.IniFormat)
+    return QSettings(ORG, APP)
 
 
 class AppSettings:
     def __init__(self) -> None:
-        self._s = QSettings(ORG, APP)
+        self._s = _open_settings()
+
+    def file_name(self) -> str:
+        return self._s.fileName()
 
     def recent_projects(self) -> list[Path]:
         raw = self._s.value("recent/projects", [], type=list)
@@ -77,3 +95,30 @@ class AppSettings:
 
     def set_last_directory(self, path: str) -> None:
         self._s.setValue("files/last_directory", path)
+
+    # --- apparence et aide (ADR-0005) ------------------------------------------------------------
+    def theme(self) -> str:
+        return str(self._s.value("ui/theme", "sombre", type=str) or "sombre")
+
+    def set_theme(self, name: str) -> None:
+        self._s.setValue("ui/theme", name)
+
+    def font_scale(self) -> int:
+        v = self._s.value("ui/font_scale", 100, type=int)
+        return int(v) if isinstance(v, int) and 50 <= v <= 200 else 100
+
+    def set_font_scale(self, percent: int) -> None:
+        self._s.setValue("ui/font_scale", int(percent))
+
+    def show_welcome(self) -> bool:
+        return bool(self._s.value("ui/show_welcome", True, type=bool))
+
+    def set_show_welcome(self, on: bool) -> None:
+        self._s.setValue("ui/show_welcome", bool(on))
+
+    def tutorials_done(self) -> set[str]:
+        raw = self._s.value("help/tutorials_done", [], type=list)
+        return {str(x) for x in raw} if isinstance(raw, list) else set()
+
+    def mark_tutorial_done(self, tutorial_id: str) -> None:
+        self._s.setValue("help/tutorials_done", sorted(self.tutorials_done() | {tutorial_id}))

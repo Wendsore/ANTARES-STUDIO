@@ -46,6 +46,8 @@ Paquet Windows (phase 9, en cours) : `pip install pyinstaller==6.22.3` puis `pyt
 
 Voir [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) (vérité sur les phases), [`CHANGELOG.md`](CHANGELOG.md), les ADR dans [`docs/adr/`](docs/adr/) et le guide [`docs/user-guide/01-premiere-video.md`](docs/user-guide/01-premiere-video.md).
 
+Dans le logiciel : **Aide > Centre d'aide** (F1, 32 rubriques en français, recherche, aide contextuelle), **Aide > Tutoriels** (7 parcours guidés validés automatiquement sur vos actions), **Ctrl+K** pour retrouver n'importe quelle commande, thème sombre ou clair et taille du texte dans **Affichage**.
+
 ## Lancer l'application
 
 ```bash

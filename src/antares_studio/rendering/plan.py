@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from antares_studio import __version__
-from antares_studio.domain.model import Project
+from antares_studio.domain.model import Canvas, Project
 from antares_studio.resources.licenses import provenance_warnings
 
 
@@ -101,6 +101,21 @@ class RenderPlan:
         return d
 
 
+def output_size(profile: RenderProfile, canvas: Canvas) -> tuple[int, int]:
+    """Dimensions de sortie : le petit côté du profil (720 ou 1080) appliqué au format du projet.
+
+    Un projet 16:9 garde exactement les dimensions du profil ; un projet vertical 9:16 ou carré n'est
+    plus étiré dans un cadre 16:9. Dimensions paires (exigence de H.264 en 4:2:0).
+    """
+    short = min(profile.width, profile.height)
+    cw, ch = canvas.width, canvas.height
+    if cw >= ch:
+        width, height = round(short * cw / ch), short
+    else:
+        width, height = short, round(short * ch / cw)
+    return width + width % 2, height + height % 2
+
+
 def build_render_plan(
     project: Project,
     scene_id: str,
@@ -122,16 +137,15 @@ def build_render_plan(
         raise ValueError("la plage de rendu est vide (0 image)")
     if end - start > 10_000_000:
         raise ValueError("plage de rendu trop longue")
-    if profile.width / profile.height != project.canvas.width / project.canvas.height:
-        warnings.append("Le ratio du profil d'export diffère de celui du projet : l'image sera étirée.")
+    width, height = output_size(profile, project.canvas)
     warnings.extend(provenance_warnings(project, scene_id))
     return RenderPlan(
         project_id=project.project_id,
         scene_id=scene_id,
         scene_name=scene.name,
         profile_id=profile_id,
-        width=profile.width,
-        height=profile.height,
+        width=width,
+        height=height,
         fps_num=project.canvas.fps_num,
         fps_den=project.canvas.fps_den,
         start_frame=start,

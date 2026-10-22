@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from antares_studio.app import theme
 from antares_studio.app.document import ProjectDocument
 from antares_studio.domain.commands import SetAssetLicense, SetProjectMetadata
 from antares_studio.domain.model import Asset, AssetLicense
@@ -175,7 +176,7 @@ class LicenseInventoryDialog(QDialog):
                 item = QTableWidgetItem(v)
                 item.setData(Qt.ItemDataRole.UserRole, row.asset.id)
                 if c == 2 and row.status != STATUS_COMPLETE:
-                    item.setForeground(Qt.GlobalColor.yellow)
+                    item.setForeground(theme.WARNING)
                 self.table.setItem(r, c, item)
         self.credits.setPlainText(credits_text(self.document.project))
         self.btn_edit.setEnabled(bool(rows))
