@@ -136,6 +136,29 @@ def load_csv(path: Path) -> DataTable:
     raise DataError("encodage non reconnu (UTF-8 attendu)")
 
 
+@dataclass(frozen=True)
+class Bin:
+    left: float
+    right: float
+    count: int
+
+
+def histogram(values: list[float], bins: int = 10) -> list[Bin]:
+    """Classes de même largeur entre le min et le max (dernière classe fermée à droite), valeurs finies."""
+    data = [v for v in values if math.isfinite(v)]
+    if not data:
+        return []
+    bins = max(1, int(bins))
+    lo, hi = min(data), max(data)
+    if hi <= lo:  # une seule valeur : une classe de largeur 1 centrée dessus
+        return [Bin(lo - 0.5, lo + 0.5, len(data))]
+    width = (hi - lo) / bins
+    counts = [0] * bins
+    for v in data:
+        counts[min(bins - 1, int((v - lo) / width))] += 1
+    return [Bin(lo + i * width, lo + (i + 1) * width, c) for i, c in enumerate(counts)]
+
+
 def nice_ticks(lo: float, hi: float, count: int = 5) -> list[float]:
     """Graduations « rondes » (1, 2, 5 × 10ⁿ) couvrant [lo, hi] ; ``count`` est indicatif."""
     if not (math.isfinite(lo) and math.isfinite(hi)):

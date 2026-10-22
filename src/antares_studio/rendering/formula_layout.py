@@ -161,24 +161,120 @@ class FormulaRenderer:
         return 0.0
 
 
+@dataclass(frozen=True)
+class Glyph:
+    text: str  # un caractère
+    font: QFont
+    x: float
+    baseline: float
+
+
+@dataclass(frozen=True)
+class Stroke:
+    a: QPointF
+    b: QPointF
+    width: float
+
+
+class _Recorder:
+    """Remplace le QPainter pendant ``FormulaRenderer.draw`` : relève glyphes (un par caractère) et traits."""
+
+    def __init__(self) -> None:
+        self.glyphs: list[Glyph] = []
+        self.strokes: list[Stroke] = []
+        self._pen = QPen()
+        self._font = QFont()
+
+    def pen(self) -> QPen:
+        return self._pen
+
+    def setPen(self, pen: QPen) -> None:
+        self._pen = QPen(pen)
+
+    def setFont(self, font: QFont) -> None:
+        self._font = QFont(font)
+
+    def drawText(self, pos: QPointF, text: str) -> None:
+        fm = QFontMetricsF(self._font)
+        x = pos.x()
+        for ch in text:
+            if not ch.isspace():
+                self.glyphs.append(Glyph(ch, self._font, x, pos.y()))
+            x += fm.horizontalAdvance(ch)
+
+    def drawLine(self, a: QPointF, b: QPointF) -> None:
+        self.strokes.append(Stroke(QPointF(a), QPointF(b), self._pen.widthF()))
+
+
+def layout_glyphs(params: dict[str, Any], text: str) -> tuple[list[Glyph], list[Stroke]]:
+    """Glyphes et traits de la formule ``text`` centrée comme dans ``paint_formula``."""
+    renderer = FormulaRenderer(formula_font(params), bool(params.get("italic", True)))
+    root = parse_formula(text).root
+    rec = _Recorder()
+    renderer.draw(rec, root, -renderer.measure(root).width / 2, 0.0)  # type: ignore[arg-type]
+    return rec.glyphs, rec.strokes
+
+
+def morph_pairs(
+    source: list[Glyph], target: list[Glyph]
+) -> tuple[list[tuple[Glyph, Glyph]], list[Glyph], list[Glyph]]:
+    """Appariement des caractères communs dans l'ordre (plus longue sous-suite commune) :
+    (paires qui se déplacent, glyphes qui disparaissent, glyphes qui apparaissent)."""
+    from difflib import SequenceMatcher
+
+    matcher = SequenceMatcher(None, [g.text for g in source], [g.text for g in target], autojunk=False)
+    pairs: list[tuple[Glyph, Glyph]] = []
+    gone: list[Glyph] = []
+    new: list[Glyph] = []
+    for op, i1, i2, j1, j2 in matcher.get_opcodes():
+        if op == "equal":
+            pairs += list(zip(source[i1:i2], target[j1:j2], strict=True))
+        else:
+            gone += source[i1:i2]
+            new += target[j1:j2]
+    return pairs, gone, new
+
+
+def _morph_amount(params: dict[str, Any]) -> float:
+    if not str(params.get("morph_to", "")).strip():
+        return 0.0
+    return max(0.0, min(1.0, float(params.get("morph", 0.0))))
+
+
 def formula_font(params: dict[str, Any]) -> QFont:
     font = QFont(str(params.get("font_family", "DejaVu Sans")))
     font.setPointSizeF(max(1.0, float(params.get("font_size", 56.0))))
     return font
 
 
-def formula_rect(params: dict[str, Any]) -> QRectF:
-    """Rectangle local centré de la formule (sélection, poignées, export)."""
+def _text_rect(params: dict[str, Any], text: str) -> QRectF:
     renderer = FormulaRenderer(formula_font(params), bool(params.get("italic", True)))
-    box = renderer.measure(parse_formula(str(params.get("text", ""))).root)
+    box = renderer.measure(parse_formula(text).root)
     pad = formula_font(params).pointSizeF() * 0.25
     return QRectF(-box.width / 2 - pad, -box.above - pad, box.width + 2 * pad, box.height + 2 * pad)
 
 
+def formula_rect(params: dict[str, Any]) -> QRectF:
+    """Rectangle local centré de la formule (sélection, poignées, export) ; interpolé pendant une
+    transformation vers ``morph_to``."""
+    src = _text_rect(params, str(params.get("text", "")))
+    u = _morph_amount(params)
+    if u <= 0.0:
+        return src
+    dst = _text_rect(params, str(params.get("morph_to", "")))
+    if u >= 1.0:
+        return dst
+    return QRectF(
+        src.left() + (dst.left() - src.left()) * u,
+        src.top() + (dst.top() - src.top()) * u,
+        src.width() + (dst.width() - src.width()) * u,
+        src.height() + (dst.height() - src.height()) * u,
+    )
+
+
 def paint_formula(painter: QPainter, params: dict[str, Any], color_pen: QPen, background: Any) -> None:
-    formula = parse_formula(str(params.get("text", "")))
-    renderer = FormulaRenderer(formula_font(params), bool(params.get("italic", True)))
-    box = renderer.measure(formula.root)
+    u = _morph_amount(params)
+    text = str(params.get("morph_to" if u >= 1.0 else "text", ""))
     rect = formula_rect(params)
     if background is not None:
         painter.setPen(Qt.PenStyle.NoPen)
@@ -186,4 +282,50 @@ def paint_formula(painter: QPainter, params: dict[str, Any], color_pen: QPen, ba
         painter.drawRoundedRect(rect, 6, 6)
     painter.setPen(color_pen)
     painter.setBrush(Qt.BrushStyle.NoBrush)
-    renderer.draw(painter, formula.root, -box.width / 2, 0.0)
+    if 0.0 < u < 1.0:
+        _paint_morph(painter, params, u)
+        return
+    formula = parse_formula(text)
+    renderer = FormulaRenderer(formula_font(params), bool(params.get("italic", True)))
+    renderer.draw(painter, formula.root, -renderer.measure(formula.root).width / 2, 0.0)
+
+
+def _paint_morph(painter: QPainter, params: dict[str, Any], u: float) -> None:
+    """Transformation : les caractères communs glissent vers leur place, les autres se fondent."""
+    src_glyphs, src_strokes = layout_glyphs(params, str(params.get("text", "")))
+    dst_glyphs, dst_strokes = layout_glyphs(params, str(params.get("morph_to", "")))
+    pairs, gone, new = morph_pairs(src_glyphs, dst_glyphs)
+    color = painter.pen().color()
+    base_opacity = painter.opacity()
+
+    def glyph(g: Glyph, x: float, baseline: float, size: float, alpha: float) -> None:
+        if alpha <= 0.0:
+            return
+        font = QFont(g.font)
+        font.setPointSizeF(max(MIN_FONT_PT, size))
+        painter.setOpacity(base_opacity * alpha)
+        painter.setFont(font)
+        painter.drawText(QPointF(x, baseline), g.text)
+
+    def strokes(items: list[Stroke], alpha: float) -> None:
+        if alpha <= 0.0:
+            return
+        painter.setOpacity(base_opacity * alpha)
+        for s in items:
+            painter.setPen(QPen(color, s.width))
+            painter.drawLine(s.a, s.b)
+        painter.setPen(QPen(color))
+
+    for a, b in pairs:
+        size = a.font.pointSizeF() + (b.font.pointSizeF() - a.font.pointSizeF()) * u
+        glyph(
+            b if u >= 0.5 else a, a.x + (b.x - a.x) * u, a.baseline + (b.baseline - a.baseline) * u, size, 1.0
+        )
+    # les disparitions se terminent à mi-parcours, les apparitions commencent à mi-parcours
+    for g in gone:
+        glyph(g, g.x, g.baseline, g.font.pointSizeF(), max(0.0, 1.0 - 2.0 * u))
+    for g in new:
+        glyph(g, g.x, g.baseline, g.font.pointSizeF(), max(0.0, 2.0 * u - 1.0))
+    strokes(src_strokes, max(0.0, 1.0 - 2.0 * u))
+    strokes(dst_strokes, max(0.0, 2.0 * u - 1.0))
+    painter.setOpacity(base_opacity)

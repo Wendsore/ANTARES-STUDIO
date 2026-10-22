@@ -16,6 +16,7 @@ MAX_ASSET_BYTES = 256 * 1024 * 1024
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".svg"}
 AUDIO_EXT = {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aac"}
 DATA_EXT = {".csv", ".tsv", ".txt"}
+MODEL_EXT = {".glb", ".gltf"}
 
 
 def _safe_name(name: str) -> str:
@@ -52,6 +53,15 @@ def import_asset(document: ProjectDocument, source: Path, kind: str = "image") -
             load_csv(source)  # refus explicite d'un CSV sans colonne numérique
         except DataError as exc:
             raise ValueError(f"données illisibles : {exc}") from exc
+    if kind == "model":
+        if ext not in MODEL_EXT:
+            raise ValueError(f"format de modèle 3D non pris en charge : {ext or '(sans extension)'}")
+        from antares_studio.rendering.gltf import GltfError, load_mesh
+
+        try:
+            load_mesh(source)  # refus explicite avant copie : fichier externe, version, triangles
+        except GltfError as exc:
+            raise ValueError(f"modèle 3D illisible : {exc}") from exc
     size = source.stat().st_size
     if size > MAX_ASSET_BYTES:
         raise ValueError(

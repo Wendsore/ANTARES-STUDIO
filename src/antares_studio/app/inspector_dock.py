@@ -39,6 +39,14 @@ from antares_studio.domain.model import Node
 from antares_studio.domain.properties import is_animatable
 from antares_studio.timeline.evaluator import NodeState
 
+# Paramètres « ressource » : (type de ressource proposé, libellé de l'absence de choix)
+ASSET_PARAMS: dict[str, tuple[str, str]] = {
+    "params.asset_id": ("image", "(aucune image)"),
+    "params.data_asset_id": ("data", "(aucun fichier CSV)"),
+    "params.sequence_asset_id": ("sequence", "(aucune séquence)"),
+    "params.model_asset_id": ("model", "(aucun modèle 3D)"),
+}
+
 
 class ColorButton(QPushButton):
     def __init__(self, parent: QWidget | None = None):
@@ -448,6 +456,12 @@ class InspectorDock(QWidget):
             w.setProperty("xs", xs)
             w.setProperty("ys", ys)
             return w
+        if spec.choices:
+            choice = QComboBox()
+            for value, text in spec.choices:
+                choice.addItem(text, value)
+            choice.currentIndexChanged.connect(lambda _i, p=path: self._commit(p, choice.currentData()))
+            return choice
         if path == "params.text":
             te = QPlainTextEdit()
             te.setMaximumHeight(80)
@@ -460,15 +474,10 @@ class InspectorDock(QWidget):
             combo.addItem("Droite", "right")
             combo.currentIndexChanged.connect(lambda _i, p=path: self._commit(p, combo.currentData()))
             return combo
-        if path in ("params.asset_id", "params.data_asset_id", "params.sequence_asset_id"):
+        if path in ASSET_PARAMS:
             combo = QComboBox()
-            wanted = {"params.data_asset_id": "data", "params.sequence_asset_id": "sequence"}.get(
-                path, "image"
-            )
-            combo.addItem(
-                {"image": "(aucune image)", "data": "(aucun fichier CSV)"}.get(wanted, "(aucune séquence)"),
-                "",
-            )
+            wanted, empty = ASSET_PARAMS[path]
+            combo.addItem(empty, "")
             for a in self.document.project.assets:
                 if a.kind == wanted:
                     combo.addItem(a.path, a.id)

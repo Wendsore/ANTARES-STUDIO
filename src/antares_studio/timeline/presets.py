@@ -117,6 +117,13 @@ PRESETS: dict[str, PresetSpec] = {
             _COMMON + (_EASING,),
         ),
         PresetSpec(
+            "morph",
+            "Transformer la formule",
+            "Passe d'une équation à la formule cible (paramètre « Transformer en ») : les symboles communs "
+            "glissent vers leur nouvelle place, les autres apparaissent en fondu.",
+            _COMMON + (_EASING,),
+        ),
+        PresetSpec(
             "kepler",
             "Orbite de Kepler (modélisation)",
             "Ellipse képlérienne autour d'un corps placé au foyer (lois de Kepler, deux corps) ; "
@@ -206,6 +213,11 @@ def apply_preset(preset_id: str, node: Node, params: dict[str, Any] | None = Non
         tracks += [tx, ty]
     elif preset_id == "trace":
         t = Track(node.id, "params.progress")
+        t.set_keyframe(start, 0.0, easing)
+        t.set_keyframe(end, 1.0, easing)
+        tracks.append(t)
+    elif preset_id == "morph":
+        t = Track(node.id, "params.morph")
         t.set_keyframe(start, 0.0, easing)
         t.set_keyframe(end, 1.0, easing)
         tracks.append(t)

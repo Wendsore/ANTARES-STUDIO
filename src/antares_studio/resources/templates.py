@@ -6,6 +6,7 @@ from collections.abc import Callable
 
 from antares_studio.domain.kinds import spec_for
 from antares_studio.domain.model import Canvas, Node, Project, Scene
+from antares_studio.science.nbody import Body
 from antares_studio.timeline.presets import apply_preset
 
 TemplateBuilder = Callable[[Project, Scene], None]
@@ -334,12 +335,151 @@ def build_kepler_orbit(project: Project, scene: Scene) -> None:
     )
 
 
+def _simulation_scene(
+    project: Project,
+    scene: Scene,
+    bodies: list[Body],
+    period: float,
+    periods: float,
+    title: str,
+    colors: tuple[str, ...],
+    radii: tuple[float, ...],
+    notes: str,
+    sources: list[dict[str, str]],
+) -> None:
+    """Scène de simulation à N corps : pistes de position image par image, trajectoires tracées."""
+    from antares_studio.domain.model import Track
+    from antares_studio.science.nbody import simulate_nbody
+
+    c = project.canvas
+    k = _scale(c)
+    steps_per_period = 4000
+    steps = int(round(steps_per_period * periods))
+    result = simulate_nbody(bodies, period / steps_per_period, steps)
+    xs = [x for step in result.positions for x, _y in step]
+    ys = [y for step in result.positions for _x, y in step]
+    # pixels par unité simulée : la figure tient entre le titre et l'encadré (≈ 500 px de haut en 1080p)
+    px = min(c.width * 0.8 / ((max(xs) - min(xs)) or 1.0), 460 * k / ((max(ys) - min(ys)) or 1.0))
+    cx, cy = c.width / 2, 440 * k
+    mid_x, mid_y = (max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2
+
+    def screen(x: float, y: float) -> tuple[float, float]:
+        return cx + (x - mid_x) * px, cy - (y - mid_y) * px  # y physique vers le haut
+
+    dur = scene.duration_frames
+    for i, body in enumerate(bodies):
+        path = result.track(i)
+        trail = [list(screen(*path[int(round(j / 180 * steps))])) for j in range(181)]
+        x0, y0 = trail[0]
+        trace = new_node(
+            "polygon",
+            f"Trajectoire {body.name}",
+            0.0,
+            0.0,
+            points=trail,
+            closed=False,
+            style_fill="#00000000",
+            style_stroke=colors[i] + "55",
+            style_stroke_width=2 * k,
+            style_dash=True,
+        )
+        trace.z_index = -1
+        node = new_node("circle", body.name, x0, y0, radius=radii[i] * k, style_fill=colors[i])
+        tx, ty = Track(node.id, "position.x"), Track(node.id, "position.y")
+        for f in range(dur + 1):
+            sx, sy = screen(*path[int(round(f / dur * steps))])
+            tx.set_keyframe(f, sx, "linear")
+            ty.set_keyframe(f, sy, "linear")
+        scene.nodes += [trace, node]
+        scene.tracks += [tx, ty]
+    # quantité de mouvement nulle : le centre de masse reste immobile à l'origine
+    bx, by = screen(0.0, 0.0)
+    scene.nodes.append(new_node("circle", "Centre de masse", bx, by, radius=5 * k, style_fill="#FFFFFFAA"))
+    heading = new_node("text", "Titre", cx, 90 * k, text=title, font_size=50 * k, bold=True)
+    scene.nodes.append(heading)
+    scene.nodes.append(
+        scale_warning_node(
+            c,
+            f"Simulation numérique (Verlet, {steps} pas, G = 1) : écart d'énergie {result.energy_drift:.1e}",
+        )
+    )
+    scene.tracks += apply_preset("appear", heading, {"duration_frames": max(1, dur // 10)})
+    project.scientific_metadata.update(
+        {
+            "representation": "simulation",
+            "to_scale": False,
+            "notes": notes,
+            "parameters": {
+                "method": "verlet",
+                "G": 1.0,
+                "dt": period / steps_per_period,
+                "steps": steps,
+                "periods": periods,
+                "energy_drift": float(f"{result.energy_drift:.3e}"),
+            },
+        }
+    )
+    add_sources(project, sources)
+
+
+def build_three_body(project: Project, scene: Scene) -> None:
+    """Chorégraphie en huit : trois masses égales se suivent sur une même courbe (solution périodique)."""
+    from antares_studio.science.nbody import FIGURE_EIGHT_PERIOD, figure_eight
+
+    _simulation_scene(
+        project,
+        scene,
+        figure_eight(),
+        FIGURE_EIGHT_PERIOD,
+        2.0,
+        "Trois corps, une seule trajectoire en huit",
+        ("#FF8A65", "#4FC3F7", "#AED581"),
+        (22.0, 22.0, 22.0),
+        "Problème à trois corps newtonien, masses égales, mouvement plan ; solution périodique de "
+        "Chenciner et Montgomery (2000), conditions initiales de Simó ; intégration Verlet-vitesse, "
+        "deux périodes ; le temps vidéo est proportionnel au temps simulé.",
+        [
+            {
+                "label": "Chenciner & Montgomery (2000), Annals of Mathematics 152, 881–901",
+                "url": "https://arxiv.org/abs/math/0011268",
+            }
+        ],
+    )
+
+
+def build_binary_star(project: Project, scene: Scene) -> None:
+    """Étoile double : deux étoiles de masses 2:1 tournent autour de leur centre de masse commun."""
+    from antares_studio.science.nbody import binary_star
+
+    bodies, period = binary_star(0.5, 1.0)
+    _simulation_scene(
+        project,
+        scene,
+        bodies,
+        period,
+        2.0,
+        "Une étoile double et son centre de masse",
+        ("#FFC857", "#FF7043"),
+        (40.0, 26.0),
+        "Problème à deux corps newtonien, rapport de masses 1/2, orbites circulaires autour du barycentre ; "
+        "intégration Verlet-vitesse (contrôle : la solution est connue analytiquement) ; deux périodes.",
+        [
+            {
+                "label": "JPL Solar System Dynamics — two-body problem",
+                "url": "https://ssd.jpl.nasa.gov/planets/approx_pos.html",
+            }
+        ],
+    )
+
+
 TEMPLATES: dict[str, tuple[str, TemplateBuilder]] = {
     "intro": ("Introduction (titre et sous-titre)", build_intro),
     "moon_phases": ("Phases de la Lune (Soleil, Terre, Lune en orbite)", build_moon_phases),
     "scale_comparison": ("Comparaison d'échelles (année-lumière)", build_scale_comparison),
     "orbit_vectors": ("Orbite et vecteurs (vitesse, gravitation)", build_orbit_vectors),
     "kepler_orbit": ("Orbite de Kepler (modélisation à deux corps)", build_kepler_orbit),
+    "three_body": ("Trois corps en huit (simulation numérique)", build_three_body),
+    "binary_star": ("Étoile double (simulation numérique)", build_binary_star),
     "credits": ("Crédits (sources, ressources, logiciel)", build_credits),
 }
 

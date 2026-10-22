@@ -17,6 +17,7 @@ class ParamSpec:
     label: str = ""  # libellé FR pour l'inspecteur
     min: float | None = None
     max: float | None = None
+    choices: tuple[tuple[str, str], ...] = ()  # (valeur, libellé FR) : liste déroulante dans l'inspecteur
 
 
 @dataclass(frozen=True)
@@ -174,6 +175,8 @@ KINDS: dict[str, KindSpec] = {
                 ParamSpec("font_family", "str", "DejaVu Sans", False, "Police"),
                 ParamSpec("font_size", "float", 56.0, True, "Taille", min=1),
                 ParamSpec("italic", "bool", True, False, "Variables en italique"),
+                ParamSpec("morph_to", "str", "", False, "Transformer en (formule cible)"),
+                ParamSpec("morph", "float", 0.0, True, "Transformation (0 → 1)", min=0, max=1),
             ),
             style=(
                 ParamSpec("fill", "color", "#FFFFFF", animatable=True, label="Couleur"),
@@ -185,6 +188,19 @@ KINDS: dict[str, KindSpec] = {
             "Graphique (courbe de données)",
             params=(
                 ParamSpec("data_asset_id", "asset", "", False, "Données (CSV)"),
+                ParamSpec(
+                    "chart_type",
+                    "str",
+                    "line",
+                    False,
+                    "Représentation",
+                    choices=(
+                        ("line", "Courbe"),
+                        ("bars", "Barres (une par ligne)"),
+                        ("histogram", "Histogramme"),
+                    ),
+                ),
+                ParamSpec("bins", "int", 10, False, "Classes de l'histogramme", min=1, max=200),
                 ParamSpec("x_column", "str", "", False, "Colonne X"),
                 ParamSpec("y_column", "str", "", False, "Colonne Y"),
                 ParamSpec("width", "float", 640.0, True, "Largeur", min=10),
@@ -217,6 +233,16 @@ KINDS: dict[str, KindSpec] = {
                 ParamSpec("height", "float", 0.0, True, "Hauteur (0 = proportionnelle)", min=0),
             ),
             style=(ParamSpec("tint", "color", "#FFFFFF00", animatable=True, label="Teinte"),),
+        ),
+        KindSpec(
+            "model3d",
+            "Modèle 3D (glTF)",
+            params=(
+                ParamSpec("model_asset_id", "asset", "", False, "Modèle (.glb)"),
+                ParamSpec("size", "float", 400.0, True, "Taille à l'écran", min=1),
+                ParamSpec("yaw_deg", "float", 30.0, True, "Rotation horizontale (°)"),
+                ParamSpec("pitch_deg", "float", 20.0, True, "Inclinaison (°)"),
+            ),
         ),
         KindSpec("group", "Groupe", container=True),
         KindSpec(
@@ -310,6 +336,8 @@ def check_param_value(spec: ParamSpec, value: Any) -> str | None:
     elif t in ("str", "asset"):
         if not isinstance(value, str):
             return f"{spec.name} : texte attendu"
+        if spec.choices and value not in {c for c, _l in spec.choices}:
+            return f"{spec.name} : valeur parmi {', '.join(c for c, _l in spec.choices)} attendue"
     elif t == "color":
         if not is_color(value):
             return f"{spec.name} : couleur #RRGGBB[AA] attendue"

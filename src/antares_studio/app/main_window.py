@@ -43,6 +43,7 @@ from antares_studio.app.provenance_dialog import LicenseInventoryDialog, edit_as
 from antares_studio.app.settings import AppSettings
 from antares_studio.app.timeline_dock import TimelineDock
 from antares_studio.app.tutorial_panel import Highlighter, TutorialPanel
+from antares_studio.app.units_dialog import UnitsDialog
 from antares_studio.domain.clipboard import MIME_TYPE as CLIPBOARD_MIME
 from antares_studio.domain.clipboard import PastePayload, copy_nodes, read_payload, remap_assets
 from antares_studio.domain.commands import (
@@ -94,6 +95,7 @@ ACTION_ICONS: dict[str, str] = {
     "act_quick_preview": "fast-forward",
     "act_export_png": "image-down",
     "act_inventory": "shield-check",
+    "act_units": "calculator",
     "act_scale_warning": "triangle-alert",
     "act_add_marker": "bookmark",
     "act_camera_view": "video",
@@ -301,6 +303,11 @@ class MainWindow(QMainWindow):
             tip="Enregistre l'image affichée, à la taille du projet (vignette, affiche, diapositive)",
         )
         self.act_inventory = self._action("Inventaire des &licences et crédits…", self.show_inventory)
+        self.act_units = self._action(
+            "&Valeur physique (constantes et unités)…",
+            self.insert_physical_value,
+            tip="Constantes sourcées et conversions contrôlées ; le résultat devient un objet Texte",
+        )
         self.act_scale_warning = self._action(
             "Avertissement d'é&chelle (« non à l'échelle »)", self.add_scale_warning
         )
@@ -490,6 +497,9 @@ class MainWindow(QMainWindow):
         m_add.addAction(self._action("Importer une &image…", self.import_image, "Ctrl+I"))
         m_add.addAction(self._action("Importer des &données (CSV) en graphique…", self.import_data))
         m_add.addAction(self._action("&Planète 3D (Blender, facultatif)…", self.add_blender_planet))
+        m_add.addAction(self._action("Importer un &modèle 3D (glTF, .glb)…", self.import_model))
+        m_add.addSeparator()
+        m_add.addAction(self.act_units)
         m_anim = mb.addMenu("&Animation")
         from antares_studio.timeline.presets import PRESETS
 
@@ -1085,6 +1095,20 @@ class MainWindow(QMainWindow):
         self.document.set_selection([node.id])
         return node
 
+    def insert_physical_value(self, dialog: UnitsDialog | None = None) -> Node | None:
+        """« Constantes et unités » : le résultat choisi devient un objet Texte (une seule annulation)."""
+        dlg = dialog or UnitsDialog(self)
+        if dialog is None and not dlg.exec():
+            return None
+        text = dlg.inserted_text
+        if not text or self.document.scene is None:
+            return None
+        with self.document.macro("Insérer une valeur physique"):
+            node = self.add_node_of_kind("text")
+            if node is not None:
+                self.document.set_node_property(node.id, "params.text", text)
+        return node
+
     def import_image(self) -> None:
         scene = self.document.scene
         if scene is None:
@@ -1156,6 +1180,56 @@ class MainWindow(QMainWindow):
             if not self.save_project_as():
                 return
         BlenderPlanetDialog(self.document, self).exec()
+
+    def import_model(self) -> None:
+        """Importe un modèle glTF (.glb) et l'ajoute à la scène, avec sa fiche de provenance."""
+        if self.document.scene is None:
+            return
+        if self.document.paths is None:
+            QMessageBox.information(
+                self,
+                "Importer un modèle 3D",
+                "Enregistrez d'abord le projet : le modèle est copié dans assets/.",
+            )
+            if not self.save_project_as():
+                return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Importer un modèle 3D", self.settings.last_directory(), "Modèles glTF (*.glb *.gltf)"
+        )
+        if not path:
+            return
+        node = self.add_model_from_file(Path(path))
+        if node is not None:
+            asset = self.document.project.asset(str(node.params["model_asset_id"]))
+            if asset is not None:
+                edit_asset_provenance(self.document, asset, self)
+
+    def add_model_from_file(self, path: Path) -> Node | None:
+        from antares_studio.rendering.gltf import load_mesh
+        from antares_studio.resources.assets import import_asset
+
+        scene = self.document.scene
+        if scene is None:
+            return None
+        try:
+            asset = import_asset(self.document, path, kind="model")
+            mesh = load_mesh(self.document.paths.root / asset.path if self.document.paths else path)
+        except (OSError, ValueError) as exc:
+            QMessageBox.critical(self, "Import impossible", str(exc))
+            return None
+        with self.document.macro("Importer un modèle 3D"):
+            node = self.add_node_of_kind("model3d")
+            if node is not None:
+                self.document.push(
+                    SetProperties(
+                        scene.id, node.id, {"params.model_asset_id": asset.id, "name": f"Modèle {path.stem}"}
+                    )
+                )
+        message = f"Modèle 3D : {mesh.triangle_count} triangles"
+        if mesh.notes:
+            message += " — " + " ; ".join(mesh.notes)
+        self.statusBar().showMessage(message, 8000)
+        return node
 
     def add_chart_from_csv(self, path: Path) -> Node | None:
         from antares_studio.resources.assets import import_asset
@@ -1492,19 +1566,39 @@ class MainWindow(QMainWindow):
         dlg = PresetDialog(preset_id, self.document, sel[0], self)
         if dlg.exec() != PresetDialog.DialogCode.Accepted:
             return
-        params = dlg.values()
-        for node in sel:
+        self.apply_preset_values(preset_id, dlg.values())
+
+    def apply_preset_values(self, preset_id: str, params: dict[str, object]) -> list[str]:
+        """Pose le preset sur la sélection ; les objets qu'il ne concerne pas (« Tracer la courbe » sur un
+        cercle, « Transformer la formule » sur un texte…) sont laissés intacts et signalés."""
+        from antares_studio.domain.kinds import animatable_properties
+        from antares_studio.timeline.presets import PRESETS
+
+        scene = self.document.scene
+        skipped: list[str] = []
+        if scene is None:
+            return skipped
+        for node in self.document.selected_nodes:
             try:
                 tracks = apply_preset(preset_id, node, params)
             except ValueError as exc:
                 QMessageBox.warning(self, "Animation", str(exc))
-                return
+                return skipped
+            allowed = set(animatable_properties(node.kind))
+            if any(t.property not in allowed for t in tracks):
+                skipped.append(node.name)
+                continue
             existing = [
                 t for t in scene.tracks_for(node.id) if t.property not in {t2.property for t2 in tracks}
             ]
             self.document.push(
                 ReplaceTracks(scene.id, node.id, existing + tracks, label=f"Animation : {preset_id}")
             )
+        if skipped:
+            self.statusBar().showMessage(
+                f"« {PRESETS[preset_id].label} » ne s'applique pas à : {', '.join(skipped)}", 8000
+            )
+        return skipped
 
     def add_template_scene(self, template_id: str) -> None:
         if template_id not in TEMPLATES:

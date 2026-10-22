@@ -115,3 +115,54 @@ class Quantity:
 
     def format(self, digits: int = 4) -> str:
         return f"{self.value:.{digits}g} {self.unit}"
+
+
+@dataclass(frozen=True)
+class Constant:
+    key: str
+    name: str  # libellé FR
+    symbol: str
+    value: float
+    unit: str  # unité SI affichée
+    source: str  # clé de SOURCES
+
+
+CONSTANTS: tuple[Constant, ...] = (
+    Constant("c", "Vitesse de la lumière dans le vide", "c", C_M_S, "m/s", "c"),
+    Constant("G", "Constante gravitationnelle", "G", G_SI, "m³ kg⁻¹ s⁻²", "G"),
+    Constant("au", "Unité astronomique", "ua", AU_M, "m", "au"),
+    Constant("ly", "Année-lumière", "al", LIGHT_YEAR_M, "m", "ly"),
+    Constant("pc", "Parsec", "pc", PARSEC_M, "m", "au"),
+    Constant("GM_sun", "Paramètre gravitationnel du Soleil", "GM☉", GM_SUN, "m³ s⁻²", "GM"),
+    Constant("GM_earth", "Paramètre gravitationnel de la Terre", "GM⊕", GM_EARTH, "m³ s⁻²", "GM"),
+    Constant("yr", "Année julienne", "a", JULIAN_YEAR_S, "s", "ly"),
+)
+
+_SUPERSCRIPT = str.maketrans("-0123456789", "⁻⁰¹²³⁴⁵⁶⁷⁸⁹")
+
+
+def format_number(value: float, digits: int = 4) -> str:
+    """Écriture française pour l'écran : virgule décimale, ``× 10ⁿ`` hors de [10⁻³, 10⁶[."""
+    v = check_finite(value)
+    digits = max(1, min(15, int(digits)))
+    if v == 0:
+        return "0"
+    exponent = math.floor(math.log10(abs(v)))
+    if -3 <= exponent < 6:
+        text = f"{v:.{digits}g}"
+        if "e" in text:  # arrondi qui franchit une puissance de dix
+            text = f"{v:.{max(0, digits - exponent - 1)}f}"
+        return text.replace(".", ",")
+    mantissa = v / 10**exponent
+    text = f"{mantissa:.{digits - 1}f}".rstrip("0").rstrip(".")
+    if text in ("10", "-10"):  # 9,9999… arrondi
+        text, exponent = text[:-1], exponent + 1
+    return f"{text.replace('.', ',')} × 10{str(exponent).translate(_SUPERSCRIPT)}"
+
+
+def format_quantity(value: float, unit_symbol: str, digits: int = 4) -> str:
+    return f"{format_number(value, digits)} {unit_symbol}"
+
+
+def units_of(dimension: str) -> list[str]:
+    return [u.symbol for u in UNITS.values() if u.dimension == dimension]
