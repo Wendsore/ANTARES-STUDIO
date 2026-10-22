@@ -9,6 +9,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
+    QComboBox,
     QDoubleSpinBox,
     QFileDialog,
     QHBoxLayout,
@@ -27,6 +28,7 @@ from antares_studio.app.document import ProjectDocument
 from antares_studio.app.settings import AppSettings
 from antares_studio.audio.subtitles import (
     SubtitleFormatError,
+    check_subtitle_style,
     check_subtitles,
     format_srt,
     format_vtt,
@@ -39,16 +41,18 @@ from antares_studio.domain.commands import (
     RemoveSubtitle,
     ReplaceSubtitles,
     SetAudioClipAttr,
+    SetProjectSetting,
     SetSubtitleAttr,
 )
 from antares_studio.domain.model import Asset, AudioClip, Subtitle
 from antares_studio.rendering import ffmpeg as ff
 
 ID_ROLE = Qt.ItemDataRole.UserRole + 1
+ROLE_LABELS = {"voice": "Voix", "music": "Musique", "effect": "Effet"}
 
 
 class AudioTab(QWidget):
-    COLS = ("Nom", "Début (s)", "Gain", "Fondu entrée (s)", "Fondu sortie (s)", "Muet", "Durée (s)")
+    COLS = ("Nom", "Début (s)", "Gain", "Fondu entrée (s)", "Fondu sortie (s)", "Muet", "Durée (s)", "Rôle")
 
     def __init__(self, document: ProjectDocument, settings: AppSettings, parent: QWidget | None = None):
         super().__init__(parent)
@@ -75,6 +79,14 @@ class AudioTab(QWidget):
         for b in (self.import_btn, self.place_btn, self.remove_btn):
             buttons.addWidget(b)
         buttons.addStretch(1)
+        self.ducking = QCheckBox("Baisser la musique sous la voix")
+        self.ducking.setObjectName("narration_ducking")
+        self.ducking.setToolTip(
+            "À l'export, les pistes de rôle « Musique » sont atténuées (≈ -15 dB) pendant que les pistes "
+            "« Voix » parlent, puis reviennent en douceur."
+        )
+        self.ducking.toggled.connect(self._set_ducking)
+        buttons.addWidget(self.ducking)
         layout.addLayout(buttons)
         self.table = QTableWidget(0, len(self.COLS))
         self.table.setHorizontalHeaderLabels(list(self.COLS))
@@ -105,6 +117,7 @@ class AudioTab(QWidget):
         try:
             selected = self.selected_clip()
             self.table.setRowCount(0)
+            self.ducking.setChecked(bool(self.document.project.settings.get("ducking", True)))
             if scene is None:
                 return
             fps = float(self.document.project.canvas.fps)
@@ -130,10 +143,25 @@ class AudioTab(QWidget):
                 dur = QTableWidgetItem(f"{clip.duration_seconds:.2f}")
                 dur.setFlags(Qt.ItemFlag.ItemIsEnabled)
                 self.table.setItem(row, 6, dur)
+                role = QComboBox()
+                for key, label in ROLE_LABELS.items():
+                    role.addItem(label, key)
+                role.setCurrentIndex(max(0, role.findData(clip.role)))
+                role.currentIndexChanged.connect(
+                    lambda _i, cid=clip.id, box=role: self._set(cid, "role", str(box.currentData()))
+                )
+                self.table.setCellWidget(row, 7, role)
                 if selected is not None and clip.id == selected.id:
                     self.table.selectRow(row)
         finally:
             self._updating = False
+
+    def _set_ducking(self, on: bool) -> None:
+        if self._updating:
+            return
+        # défaut = activé : la clé n'est écrite que si l'on désactive (anciens projets inchangés)
+        label = "Baisser la musique sous la voix" if on else "Ne plus baisser la musique"
+        self.document.push(SetProjectSetting("ducking", None if on else False, label=label))
 
     def _spin(
         self, value: float, lo: float, hi: float, step: float, clip_id: str, attr: str
@@ -293,11 +321,10 @@ class SubtitlesTab(QWidget):
                 for col, item in enumerate((start, end, text)):
                     self.table.setItem(row, col, item)
             issues = check_subtitles(scene.subtitles, scene.duration_frames, self.document.project.canvas.fps)
-            self.diag.setText(
-                ""
-                if not issues
-                else "À vérifier : " + " ; ".join(f"n° {i.index + 1} : {i.message}" for i in issues[:6])
-            )
+            notes = [f"n° {i.index + 1} : {i.message}" for i in issues[:6]]
+            if scene.subtitles:
+                notes += check_subtitle_style(self.document.project.subtitle_style)
+            self.diag.setText("À vérifier : " + " ; ".join(notes) if notes else "")
         finally:
             self._updating = False
 

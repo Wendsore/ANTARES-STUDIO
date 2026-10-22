@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import tempfile
 from pathlib import Path
 
 from PySide6.QtCore import QMimeData, QPointF, QSize, Qt, QTimer
@@ -31,6 +32,7 @@ from antares_studio.app.diagnostics import diagnostics_report
 from antares_studio.app.dialogs import AboutDialog, DiagnosticsDialog, NewProjectDialog
 from antares_studio.app.document import ProjectDocument
 from antares_studio.app.export_dialog import ExportDialog
+from antares_studio.app.export_queue import ExportJob, ExportQueue, ExportsPanel
 from antares_studio.app.help_center import HelpCenter
 from antares_studio.app.inspector_dock import InspectorDock
 from antares_studio.app.layers_dock import LayersDock
@@ -62,7 +64,11 @@ from antares_studio.help import topics
 from antares_studio.help.tutorials import TUTORIALS, TUTORIALS_BY_ID, TutorialContext
 from antares_studio.persistence.schema import ProjectFormatError
 from antares_studio.persistence.store import PROJECT_SUFFIX, ProjectStore, resolve_project_root
-from antares_studio.rendering.exporter import ProjectRenderResult
+from antares_studio.rendering import ffmpeg as ff
+from antares_studio.rendering.exporter import ProjectRenderResult, RenderError, audio_plans_for_scene
+from antares_studio.rendering.plan import build_render_plan
+from antares_studio.rendering.qt_painter import ImageCache
+from antares_studio.rendering.transitions import FrameRenderer
 from antares_studio.resources.licenses import inventory
 from antares_studio.resources.templates import TEMPLATES, create_project, scale_warning_node, template_labels
 from antares_studio.timeline.presets import apply_preset
@@ -77,6 +83,7 @@ CONTEXT_TOPICS: dict[str, str] = {
     "dock_timeline": "images-cles",
     "dock_narration": "narration",
     "dock_tutorial": "tutoriels",
+    "dock_exports": "export-video",
 }
 # Icônes Lucide des actions (recolorées à chaque changement de thème).
 ACTION_ICONS: dict[str, str] = {
@@ -84,6 +91,8 @@ ACTION_ICONS: dict[str, str] = {
     "act_open": "folder-open",
     "act_save": "save",
     "act_export": "clapperboard",
+    "act_quick_preview": "fast-forward",
+    "act_export_png": "image-down",
     "act_inventory": "shield-check",
     "act_scale_warning": "triangle-alert",
     "act_add_marker": "bookmark",
@@ -210,6 +219,15 @@ class MainWindow(QMainWindow):
         )
         self.splitDockWidget(self.inspector_dock, self.tutorial_dock, Qt.Orientation.Vertical)
         self.tutorial_dock.hide()
+        self.export_queue = ExportQueue(self)
+        self.export_queue.jobFinished.connect(self._export_job_finished)
+        self.exports = ExportsPanel(self.export_queue)
+        self.exports_dock = self._dock(
+            "Exports", self.exports, Qt.DockWidgetArea.BottomDockWidgetArea, "dock_exports"
+        )
+        self.tabifyDockWidget(self.narration_dock, self.exports_dock)
+        self.exports_dock.hide()
+        self.timeline_dock.raise_()
         for widget, name in (
             (self.canvas, "canvas"),
             (self.library.search, "library_search"),
@@ -239,6 +257,7 @@ class MainWindow(QMainWindow):
             self.timeline_dock,
             self.narration_dock,
             self.tutorial_dock,
+            self.exports_dock,
         )
 
     def _dock(self, title: str, widget: QWidget, area: Qt.DockWidgetArea, name: str) -> QDockWidget:
@@ -270,6 +289,17 @@ class MainWindow(QMainWindow):
         self.act_save = self._action("&Enregistrer", self.save_project, QKeySequence.StandardKey.Save)
         self.act_save_as = self._action("Enregistrer &sous…", self.save_project_as, "Ctrl+Shift+S")
         self.act_export = self._action("E&xporter la vidéo…", self.export_video, "Ctrl+E")
+        self.act_quick_preview = self._action(
+            "Aperçu &rapide (360p)",
+            self.quick_preview,
+            "Ctrl+Shift+E",
+            "Rend la scène en basse définition en arrière-plan puis l'ouvre dans votre lecteur vidéo",
+        )
+        self.act_export_png = self._action(
+            "Exporter l'&image courante (PNG)…",
+            self.export_still,
+            tip="Enregistre l'image affichée, à la taille du projet (vignette, affiche, diapositive)",
+        )
         self.act_inventory = self._action("Inventaire des &licences et crédits…", self.show_inventory)
         self.act_scale_warning = self._action(
             "Avertissement d'é&chelle (« non à l'échelle »)", self.add_scale_warning
@@ -409,7 +439,8 @@ class MainWindow(QMainWindow):
         for a in (self.act_save, self.act_save_as):
             m_file.addAction(a)
         m_file.addSeparator()
-        m_file.addAction(self.act_export)
+        for a in (self.act_export, self.act_quick_preview, self.act_export_png):
+            m_file.addAction(a)
         m_file.addAction(self.act_inventory)
         m_file.addSeparator()
         m_file.addAction(self.act_quit)
@@ -628,6 +659,8 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.timeline_dock)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.narration_dock)
         self.tabifyDockWidget(self.timeline_dock, self.narration_dock)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.exports_dock)
+        self.tabifyDockWidget(self.narration_dock, self.exports_dock)
         self.timeline_dock.raise_()
         self.resize(1400, 860)
         self.canvas.fit_to_view()
@@ -933,17 +966,91 @@ class MainWindow(QMainWindow):
 
     def export_video(self) -> None:
         self.timeline.pause()
-        dlg = ExportDialog(self.document, self.settings, self)
+        dlg = ExportDialog(self.document, self.settings, self, queue=self.export_queue)
         dlg.exec()
+        if dlg.queued_job is not None:
+            self.show_exports()
         if dlg.render_result is not None:
-            self.ui_counters["exports"] += 1
-            if isinstance(dlg.render_result, ProjectRenderResult):
-                self.ui_counters["full_exports"] += 1
+            self._count_export(dlg.render_result)
+
+    def _count_export(self, result: object) -> None:
+        self.ui_counters["exports"] += 1
+        if isinstance(result, ProjectRenderResult):
+            self.ui_counters["full_exports"] += 1
+
+    def _export_job_finished(self, job: ExportJob) -> None:
+        self._count_export(job.result)
+        self.statusBar().showMessage(f"Export terminé : {job.output_path}", 8000)
+
+    def show_exports(self) -> None:
+        self.exports_dock.show()
+        self.exports_dock.raise_()
+
+    def quick_preview(self) -> ExportJob | None:
+        """Rend la scène courante en 360p en arrière-plan, puis l'ouvre dans le lecteur du système."""
+        scene = self.document.scene
+        if scene is None:
+            return None
+        folder = self.document.paths.renders if self.document.paths else Path(tempfile.gettempdir())
+        out = folder / f"Aperçu - {scene.name.replace('/', '-').replace(chr(92), '-')}.mp4"
+        try:
+            audio = audio_plans_for_scene(self.document.project, scene.id, self.document.resolve_asset)
+            plan = build_render_plan(self.document.project, scene.id, "preview_360p", str(out), audio=audio)
+        except (RenderError, ValueError) as exc:
+            QMessageBox.warning(self, "Aperçu rapide", str(exc))
+            return None
+        if ff.find_ffmpeg(self.settings.ffmpeg_path() or None) is None:
+            QMessageBox.warning(
+                self,
+                "Aperçu rapide",
+                "FFmpeg est introuvable : indiquez son emplacement (Aide > Chemin de FFmpeg…).",
+            )
+            return None
+        job = ExportJob.from_document(
+            self.document, out.name, out, plan, ffmpeg_path=self.settings.ffmpeg_path(), open_when_done=True
+        )
+        self.export_queue.submit(job)
+        self.show_exports()
+        return job
+
+    def export_still(self, path: str | None = None) -> Path | None:
+        """Enregistre l'image courante en PNG, à la résolution du projet (caméra et transition comprises)."""
+        scene = self.document.scene
+        if scene is None:
+            return None
+        if path is None:
+            folder = (
+                self.document.paths.renders if self.document.paths else Path(self.settings.last_directory())
+            )
+            default = folder / f"{scene.name} - image {self.document.frame}.png"
+            path, _ = QFileDialog.getSaveFileName(self, "Exporter l'image", str(default), "Image PNG (*.png)")
+            if not path:
+                return None
+        target = Path(path if path.lower().endswith(".png") else path + ".png")
+        c = self.document.project.canvas
+        renderer = FrameRenderer(self.document.project, self.document.resolve_asset, ImageCache())
+        image = renderer.render(scene.id, self.document.frame, c.width, c.height)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if not image.save(str(target)):  # format déduit de l'extension .png
+            QMessageBox.warning(self, "Exporter l'image", f"Impossible d'écrire {target}.")
+            return None
+        self.statusBar().showMessage(f"Image enregistrée : {target}", 6000)
+        return target
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if not self.maybe_save():
             event.ignore()
             return
+        if self.export_queue.pending():
+            answer = QMessageBox.question(
+                self,
+                "Exports en cours",
+                f"{len(self.export_queue.pending())} export(s) non terminé(s). Les annuler et quitter ?",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                event.ignore()
+                return
+        self.export_queue.wait_idle()
         self.timeline.pause()
         self.settings.save_window(self.saveGeometry(), self.saveState())
         super().closeEvent(event)

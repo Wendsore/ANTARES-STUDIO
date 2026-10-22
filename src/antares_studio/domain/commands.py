@@ -644,6 +644,7 @@ _AUDIO_ATTRS = (
     "fade_in_seconds",
     "fade_out_seconds",
     "muted",
+    "role",
 )
 
 
@@ -798,3 +799,28 @@ class SetProjectMetadata:
             project.scientific_metadata[self.key] = self._old
         else:
             project.scientific_metadata.pop(self.key, None)
+
+
+@dataclass
+class SetProjectSetting:
+    """Modifie un réglage du projet (``settings``) ; ``None`` retire la clé (retour au défaut)."""
+
+    key: str
+    value: Any
+    label: str = "Réglage du projet"
+    _old: Any = field(default=None, repr=False)
+    _had: bool = field(default=False, repr=False)
+
+    def do(self, project: Project) -> None:
+        self._had = self.key in project.settings
+        self._old = copy.deepcopy(project.settings.get(self.key))
+        if self.value is None:
+            project.settings.pop(self.key, None)
+        else:
+            project.settings[self.key] = copy.deepcopy(self.value)
+
+    def undo(self, project: Project) -> None:
+        if self._had:
+            project.settings[self.key] = self._old
+        else:
+            project.settings.pop(self.key, None)

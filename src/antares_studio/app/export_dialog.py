@@ -1,11 +1,13 @@
-"""Dialogue d'export : profil, destination, progression, annulation ; rendu dans un thread séparé."""
+"""Dialogue d'export : profil, destination, progression, annulation ; rendu dans un thread séparé.
+
+« En arrière-plan » confie le travail à la file d'exports (projet figé) et rend la main à l'éditeur.
+"""
 
 from __future__ import annotations
 
-import threading
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, QThread, QUrl, Signal
+from PySide6.QtCore import Qt, QThread, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -25,90 +27,79 @@ from PySide6.QtWidgets import (
 
 from antares_studio.app import icons, theme
 from antares_studio.app.document import ProjectDocument
+from antares_studio.app.export_queue import ExportJob, ExportQueue, RenderWorker
 from antares_studio.app.settings import AppSettings
 from antares_studio.rendering import ffmpeg as ff
 from antares_studio.rendering.exporter import (
     ProjectRenderResult,
-    RenderCancelledError,
     RenderError,
     RenderResult,
     audio_plans_for_scene,
-    export_project,
-    export_video,
 )
 from antares_studio.rendering.plan import PROFILES, RenderPlan, build_render_plan
 
+FILE_FILTERS = {
+    "mp4": "Vidéo MP4 (*.mp4)",
+    "webm": "Vidéo WebM (*.webm)",
+    "gif": "Image animée GIF (*.gif)",
+}
 
-class _Worker(QObject):
-    progress = Signal(int, int)
-    finished = Signal(object)  # RenderResult
-    failed = Signal(str, str)
-    cancelled = Signal()
 
-    def __init__(
-        self,
-        document: ProjectDocument,
-        plan: RenderPlan | None,
-        ffmpeg_path: str,
-        whole_project: tuple[str, str] | None = None,  # (profil, fichier de sortie) : toutes les scènes
-    ):
-        super().__init__()
-        self.document = document
-        self.plan = plan
-        self.ffmpeg_path = ffmpeg_path
-        self.whole_project = whole_project
-        self.cancel = threading.Event()
+def with_video_suffix(path: str, suffix: str) -> str:
+    """Remplace l'extension vidéo connue (.mp4, .webm, .gif) ; les autres points du nom sont gardés."""
+    low = path.lower()
+    for known in (".mp4", ".webm", ".gif"):
+        if low.endswith(known):
+            return path[: -len(known)] + suffix
+    return path + suffix
 
-    def run(self) -> None:
-        try:
-            result: RenderResult | ProjectRenderResult
-            if self.whole_project is not None:
-                result = export_project(
-                    self.document.project,
-                    self.whole_project[0],
-                    self.whole_project[1],
-                    progress=lambda i, n: self.progress.emit(i, n),
-                    cancel=self.cancel,
-                    assets=self.document.resolve_asset,
-                    ffmpeg_path=self.ffmpeg_path or None,
-                )
-            else:
-                assert self.plan is not None
-                result = export_video(
-                    self.document.project,
-                    self.plan,
-                    progress=lambda i, n: self.progress.emit(i, n),
-                    cancel=self.cancel,
-                    assets=self.document.resolve_asset,
-                    ffmpeg_path=self.ffmpeg_path or None,
-                )
-        except RenderCancelledError:
-            self.cancelled.emit()
-        except (RenderError, ff.FFmpegError, ff.FFmpegNotFoundError) as exc:
-            self.failed.emit(str(exc), getattr(exc, "details", "") or getattr(exc, "stderr", ""))
-        except Exception as exc:  # noqa: BLE001 — remonter toute erreur à l'utilisateur
-            self.failed.emit(f"Erreur inattendue : {exc}", "")
-        else:
-            self.finished.emit(result)
+
+def profile_items() -> list[tuple[str, str | None]]:
+    """Entrées de la liste des profils, regroupées (``None`` = séparateur entre groupes)."""
+    items: list[tuple[str, str | None]] = []
+    group = None
+    for pid, prof in PROFILES.items():
+        if group is not None and prof.group != group:
+            items.append(("", None))
+        group = prof.group
+        items.append((f"{prof.group} · {prof.label} — {prof.width}×{prof.height}", pid))
+    return items
 
 
 class ExportDialog(QDialog):
-    def __init__(self, document: ProjectDocument, settings: AppSettings, parent: QWidget | None = None):
+    def __init__(
+        self,
+        document: ProjectDocument,
+        settings: AppSettings,
+        parent: QWidget | None = None,
+        queue: ExportQueue | None = None,
+    ):
         super().__init__(parent)
         self.document = document
         self.settings = settings
+        self.queue = queue
+        self.queued_job: ExportJob | None = None
         self._thread: QThread | None = None
-        self._worker: _Worker | None = None
+        self._worker: RenderWorker | None = None
         self.render_result: RenderResult | ProjectRenderResult | None = None
         self.setWindowTitle("Exporter la vidéo")
         self.setModal(True)
         form = QFormLayout()
         self.profile = QComboBox()
-        for pid, prof in PROFILES.items():
-            self.profile.addItem(f"{prof.label} — {prof.width}×{prof.height}", pid)
+        self.profile.setObjectName("export_profile")
+        for text, pid in profile_items():
+            if pid is None:
+                self.profile.insertSeparator(self.profile.count())
+            else:
+                self.profile.addItem(text, pid)
         idx = self.profile.findData(settings.last_export_profile())
         self.profile.setCurrentIndex(max(0, idx))
+        self.profile.currentIndexChanged.connect(self._profile_changed)
         form.addRow("Profil :", self.profile)
+        self.profile_hint = QLabel()
+        self.profile_hint.setWordWrap(True)
+        self.profile_hint.setProperty("role", "hint")
+        form.addRow("", self.profile_hint)
         self.all_scenes = QCheckBox("Toutes les scènes à la suite (vidéo complète)")
         self.all_scenes.setToolTip(
             "Rend chaque scène puis les enchaîne sans ré-encodage ; sous-titres fusionnés et crédits à côté."
@@ -152,6 +143,15 @@ class ExportDialog(QDialog):
         self.start_btn.setDefault(True)
         self.start_btn.clicked.connect(self.start)
         self.start_btn.setEnabled(ffmpeg is not None)
+        self.background_btn = QPushButton(icons.icon("list-video"), "En arrière-plan")
+        self.background_btn.setObjectName("export_background")
+        self.background_btn.setToolTip(
+            "Ajoute l'export à la file (panneau Exports) et ferme ce dialogue : vous continuez d'éditer, "
+            "la vidéo est rendue telle que le projet est maintenant."
+        )
+        self.background_btn.clicked.connect(self.start_in_background)
+        self.background_btn.setEnabled(ffmpeg is not None and queue is not None)
+        self.background_btn.setVisible(queue is not None)
         self.cancel_btn = QPushButton("Annuler")
         self.cancel_btn.clicked.connect(self._cancel_or_close)
         self.open_folder_btn = QPushButton(icons.icon("folder-open"), "Ouvrir le dossier")
@@ -160,6 +160,7 @@ class ExportDialog(QDialog):
         self.open_folder_btn.setVisible(False)
         buttons.addWidget(self.open_folder_btn)
         buttons.addStretch(1)
+        buttons.addWidget(self.background_btn)
         buttons.addWidget(self.start_btn)
         buttons.addWidget(self.cancel_btn)
         layout = QVBoxLayout(self)
@@ -167,7 +168,30 @@ class ExportDialog(QDialog):
         layout.addWidget(self.progress)
         layout.addWidget(self.status)
         layout.addLayout(buttons)
-        self.resize(560, 260)
+        self.resize(620, 280)
+        self._profile_changed()
+
+    def current_profile_id(self) -> str:
+        return str(self.profile.currentData())
+
+    def _profile_changed(self) -> None:
+        prof = PROFILES[self.current_profile_id()]
+        hints = []
+        if prof.fixed_frame:
+            hints.append(
+                f"Cadre imposé {prof.width}×{prof.height} : bandes noires si le projet a un autre format."
+            )
+        if not prof.has_audio:
+            hints.append("Sans son.")
+        if prof.max_fps is not None:
+            hints.append(f"Cadence limitée à {prof.max_fps:g} images/s.")
+        if prof.container == "webm":
+            hints.append("Encodage VP9 plus lent que le MP4.")
+        self.profile_hint.setText(" ".join(hints))
+        self.profile_hint.setVisible(bool(hints))
+        current = self.path_edit.text().strip()
+        if Path(current).name:
+            self.path_edit.setText(with_video_suffix(current, prof.suffix))
 
     def _refresh_default_path(self) -> None:
         self.path_edit.setText(str(self._default_path()))
@@ -177,47 +201,74 @@ class ExportDialog(QDialog):
         base = (scene.name if scene else "scene").replace("/", "-").replace("\\", "-")
         title = (self.document.project.title or "video").replace("/", "-").replace("\\", "-")
         folder = self.document.paths.renders if self.document.paths else Path(self.settings.last_directory())
+        suffix = PROFILES[self.current_profile_id()].suffix if hasattr(self, "profile") else ".mp4"
         if getattr(self, "all_scenes", None) is not None and self.all_scenes.isChecked():
-            return folder / f"{title}.mp4"
-        return folder / f"{title} - {base}.mp4"
+            return folder / f"{title}{suffix}"
+        return folder / f"{title} - {base}{suffix}"
 
     def _browse(self) -> None:
+        prof = PROFILES[self.current_profile_id()]
         path, _ = QFileDialog.getSaveFileName(
-            self, "Enregistrer la vidéo", self.path_edit.text(), "Vidéo MP4 (*.mp4)"
+            self, "Enregistrer la vidéo", self.path_edit.text(), FILE_FILTERS[prof.container]
         )
         if path:
-            if not path.lower().endswith(".mp4"):
-                path += ".mp4"
+            if not path.lower().endswith(prof.suffix):
+                path += prof.suffix
             self.path_edit.setText(path)
 
-    def start(self) -> None:
+    def _prepare(self) -> tuple[Path, RenderPlan | None] | None:
+        """Fichier de sortie et plan (``None`` pour toutes les scènes) ; ``None`` si impossible."""
         scene = self.document.scene
         if scene is None:
-            return
+            return None
         out = Path(self.path_edit.text().strip())
         if not out.name:
             QMessageBox.warning(self, "Export", "Indiquez un fichier de sortie.")
-            return
-        pid = str(self.profile.currentData())
+            return None
+        pid = self.current_profile_id()
         self.settings.set_last_export_profile(pid)
         if self.all_scenes.isChecked():
-            self._worker = _Worker(
-                self.document, None, self.settings.ffmpeg_path(), whole_project=(pid, str(out))
+            return out, None
+        try:
+            audio = audio_plans_for_scene(self.document.project, scene.id, self.document.resolve_asset)
+            plan = build_render_plan(self.document.project, scene.id, pid, str(out), audio=audio)
+        except (RenderError, ValueError) as exc:
+            QMessageBox.warning(self, "Export", str(exc))
+            return None
+        if plan.warnings:
+            self.status.setText("Avertissement : " + " ".join(plan.warnings))
+        return out, plan
+
+    def start_in_background(self) -> None:
+        """Confie l'export à la file (projet figé maintenant) et ferme le dialogue."""
+        if self.queue is None:
+            return
+        prepared = self._prepare()
+        if prepared is None:
+            return
+        out, plan = prepared
+        label = out.name + (" (toutes les scènes)" if plan is None else "")
+        self.queued_job = self.queue.submit(
+            ExportJob.from_document(
+                self.document,
+                label,
+                out,
+                plan,
+                None if plan is not None else self.current_profile_id(),
+                self.settings.ffmpeg_path(),
             )
-        else:
-            try:
-                audio = audio_plans_for_scene(self.document.project, scene.id, self.document.resolve_asset)
-            except RenderError as exc:
-                QMessageBox.warning(self, "Export", str(exc))
-                return
-            try:
-                plan = build_render_plan(self.document.project, scene.id, pid, str(out), audio=audio)
-            except ValueError as exc:
-                QMessageBox.warning(self, "Export", str(exc))
-                return
-            if plan.warnings:
-                self.status.setText("Avertissement : " + " ".join(plan.warnings))
-            self._worker = _Worker(self.document, plan, self.settings.ffmpeg_path())
+        )
+        self.accept()
+
+    def start(self) -> None:
+        prepared = self._prepare()
+        if prepared is None:
+            return
+        out, plan = prepared
+        whole = (self.current_profile_id(), str(out)) if plan is None else None
+        self._worker = RenderWorker(
+            self.document.project, self.document.resolve_asset, plan, self.settings.ffmpeg_path(), whole
+        )
         self._thread = QThread(self)
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
@@ -226,6 +277,7 @@ class ExportDialog(QDialog):
         self._worker.failed.connect(self._on_failed)
         self._worker.cancelled.connect(self._on_cancelled)
         self.start_btn.setEnabled(False)
+        self.background_btn.setEnabled(False)
         self.profile.setEnabled(False)
         self.path_edit.setEnabled(False)
         self.cancel_btn.setText("Annuler l'export")
@@ -244,6 +296,7 @@ class ExportDialog(QDialog):
         self._worker = None
         self.cancel_btn.setText("Fermer")
         self.start_btn.setEnabled(True)
+        self.background_btn.setEnabled(self.queue is not None)
         self.profile.setEnabled(True)
         self.path_edit.setEnabled(True)
 

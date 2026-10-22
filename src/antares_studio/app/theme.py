@@ -19,6 +19,8 @@ from dataclasses import dataclass, fields
 from PySide6.QtGui import QColor, QFont, QPalette
 from PySide6.QtWidgets import QApplication, QStyleFactory
 
+from antares_studio.domain.colors import contrast_ratio, relative_luminance  # noqa: F401 (API du thème)
+
 
 @dataclass(frozen=True)
 class Palette:
@@ -163,22 +165,6 @@ COMPONENT_PAIRS: tuple[tuple[str, str], ...] = (
     ("keyframe_selected", "track_alt"),
     ("keyframe_selected", "panel"),
 )
-
-
-def relative_luminance(color: str) -> float:
-    """Luminance relative sRGB (WCAG 2.2, définition « relative luminance »)."""
-    c = QColor(color)
-
-    def lin(v: float) -> float:
-        return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
-
-    return 0.2126 * lin(c.redF()) + 0.7152 * lin(c.greenF()) + 0.0722 * lin(c.blueF())
-
-
-def contrast_ratio(a: str, b: str) -> float:
-    la, lb = relative_luminance(a), relative_luminance(b)
-    hi, lo = max(la, lb), min(la, lb)
-    return (hi + 0.05) / (lo + 0.05)
 
 
 # --- jetons lus au moment du dessin (canevas, timeline) ------------------------------------------
