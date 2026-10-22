@@ -47,6 +47,8 @@ def project_to_dict(project: Project) -> dict[str, Any]:
             scene.pop("transition", None)
         if not scene.get("post"):
             scene.pop("post", None)
+        if not scene.get("backdrop"):
+            scene.pop("backdrop", None)
         for clip in scene["audio"]:
             if clip.get("role") == "voice":
                 clip.pop("role", None)
@@ -120,6 +122,7 @@ def _scene_from(data: Any, path: str) -> Scene:
         ],
         transition=_transition_from(d.get("transition", {}), f"{path}.transition"),
         post=_expect_json_dict(d.get("post", {}), f"{path}.post"),
+        backdrop=_expect_str(d.get("backdrop", ""), f"{path}.backdrop"),
     )
 
 

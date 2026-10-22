@@ -59,7 +59,7 @@ from antares_studio.domain.commands import (
     SetSceneProperty,
 )
 from antares_studio.domain.ids import new_id
-from antares_studio.domain.kinds import spec_for
+from antares_studio.domain.kinds import resolve_variant, spec_for
 from antares_studio.domain.layout import ALIGN_MODES, align_deltas, distribute_deltas
 from antares_studio.domain.model import AssetLicense, AudioClip, Canvas, Marker, Node, Scene
 from antares_studio.domain.validation import ProjectValidationError
@@ -196,6 +196,7 @@ class MainWindow(QMainWindow):
         self.library.objectLookRequested.connect(self.apply_object_look)
         self.library.sceneLookRequested.connect(self.apply_scene_look)
         self.library.soundRequested.connect(self.insert_sound)
+        self.library.textStyleRequested.connect(self.apply_text_style)
         self.library_dock = self._dock(
             "Bibliothèque", self.library, Qt.DockWidgetArea.LeftDockWidgetArea, "dock_library"
         )
@@ -1096,9 +1097,11 @@ class MainWindow(QMainWindow):
 
     # --- objets ---------------------------------------------------------------
     def add_node_of_kind(self, kind: str, at: QPointF | None = None) -> Node | None:
+        """Ajoute un objet ``kind`` (ou une variante « solid3d:sphere ») au centre de la vue."""
         scene = self.document.scene
         if scene is None:
             return None
+        kind, variant_label, variant_params = resolve_variant(kind)
         spec = spec_for(kind)
         c = self.document.project.canvas
         if kind == "camera":  # cadre initial = image entière : rien ne change tant qu'on ne l'anime pas
@@ -1114,10 +1117,10 @@ class MainWindow(QMainWindow):
         count = sum(1 for n in scene.nodes if n.kind == kind) + 1
         node = Node.create(
             kind,
-            f"{spec.label} {count}",
+            f"{variant_label if variant_params else spec.label} {count}",
             position=[x, y],
             style=spec.default_style(),
-            params=spec.default_params(),
+            params={**spec.default_params(), **variant_params},
         )
         if kind == "text":
             node.params["text"] = "Votre texte"
@@ -1629,6 +1632,30 @@ class MainWindow(QMainWindow):
                 f"« {PRESETS[preset_id].label} » ne s'applique pas à : {', '.join(skipped)}", 8000
             )
         return skipped
+
+    def apply_text_style(self, style_id: str) -> int:
+        """Applique un style d'écriture (police, couleur, texture, façon d'écrire) aux textes, encadrés et
+        équations sélectionnés, en une étape d'annulation ; retourne le nombre d'objets modifiés."""
+        from antares_studio.domain.text_styles import TEXT_STYLES, style_values
+
+        scene = self.document.scene
+        if scene is None or style_id not in TEXT_STYLES:
+            return 0
+        targets = [(n, style_values(style_id, n.kind)) for n in self.document.selected_nodes]
+        targets = [(n, v) for n, v in targets if v]
+        if not targets:
+            QMessageBox.information(
+                self, "Styles d'écriture", "Sélectionnez d'abord un texte, un encadré ou une équation."
+            )
+            return 0
+        label = TEXT_STYLES[style_id][0]
+        with self.document.macro(f"Style d'écriture : {label}"):
+            for node, values in targets:
+                self.document.push(SetProperties(scene.id, node.id, values, label=f"Style : {label}"))
+        self.statusBar().showMessage(
+            f"Style « {label} » appliqué. Animation « Écrire » : l'objet s'écrit à l'écran.", 6000
+        )
+        return len(targets)
 
     def apply_object_look(self, look_id: str) -> int:
         """Remplace les effets des objets sélectionnés par ceux du préréglage (une étape d'annulation)."""

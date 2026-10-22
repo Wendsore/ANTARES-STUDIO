@@ -2,6 +2,19 @@
 
 Toutes les évolutions **effectives** (pas les intentions). Format : date, lot, changements observables.
 
+## [0.1.0.dev0] — 2026-10-22 — Écriture à la craie, grilles déformables, solides 3D
+
+- **Écriture progressive** des textes et des équations (animation **Écrire**, réglage *Écriture 0 → 1*) : tracé puis remplissage (façon 3Blue1Brown), craie lettre par lettre, machine à écrire avec curseur, lettres ou mots en fondu ; **Effacer l'écriture** en sens inverse. Une équation s'écrit dans l'ordre de lecture (barre de fraction, racine).
+- **Craie** : effet *Texture craie* (préréglage « Craie ») sur tout objet ; **décors de scène** (Inspecteur de scène > Décor) : tableau noir, tableau vert, papier quadrillé, cahier à lignes, plan d'architecte, ciel étoilé.
+- **17 polices livrées** (Kalam, Caveat, Cabin Sketch, Fredericka the Great, EB Garamond, Special Elite, Bebas Neue…) : même aspect sur tous les ordinateurs, en tête de la liste *Police* de l'Inspecteur ; licences OFL 1.1 / Apache 2.0 jointes.
+- **16 styles d'écriture** (Bibliothèque > Effets) : craies blanche, jaune et bleue, titre gravé, crayonné, tracé mathématique, feutre, cahier, notes rapides, écriture d'élève, machine à écrire, terminal, titre de vidéo, néon, citation, style simple.
+- **Grille** : transformation linéaire animable (matrice a, b, c, d ; vecteurs î et ĵ ; grille d'origine en filigrane), déformations **puits de gravité**, **onde**, **tourbillon**, vue en **perspective** (nappe d'espace-temps creusée) ; animations *Transformation linéaire*, *Courber l'espace*, *Onde qui se propage*.
+- **Solides 3D** dans la Bibliothèque : cube, pavé droit, sphère, cylindre, cône, pyramide, tétraèdre, octaèdre, icosaèdre, tore ; faces ombrées, arêtes, fil de fer (arêtes cachées en pointillé), verre ; animation *Rotation 3D*.
+- **Modèles** : Tableau noir (Pythagore à la craie), Transformation linéaire, Espace-temps courbé par une masse, Solides 3D en rotation.
+- **Bruitages** : catégorie *Écriture* (craie, machine à écrire, stylo, effacer le tableau).
+- Aide : rubriques « Écriture progressive, craie et styles d'écriture », « Grilles, transformations et espace courbé », « Solides 3D » ; équations, objets, Bibliothèque et limites mises à jour.
+- ADR-0008.
+
 ## [0.1.0.dev0] — 2026-10-22 — Post-production : effets, filtres, bruitages, formats d'export
 
 - **Effets d'objet** (Bibliothèque > Effets, Inspecteur > Effets) : flou, lueur (rayon, couleur, intensité), ombre portée, luminosité, contraste, saturation ; animables ; 8 préréglages (Lueur d'étoile, Néon bleu, Ombre portée…), appliqués à la sélection en un Ctrl+Z.

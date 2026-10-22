@@ -170,12 +170,52 @@ def device_scale(t: QTransform) -> float:
     return math.sqrt(abs(t.m11() * t.m22() - t.m12() * t.m21())) or 1.0
 
 
+CHALK_TILE = 256  # côté du motif de grain de craie, répété sur toute l'image
+
+
+@lru_cache(maxsize=1)
+def _chalk_texture() -> Float:
+    """Grain du tableau, valeurs 0..1 : bruit fin mêlé d'amas plus larges, raccord sans couture
+    (flou circulaire). Graine fixe : le même texte a le même grain à chaque export."""
+    rng = np.random.default_rng(1729)
+    n = CHALK_TILE
+    fine = rng.random((n, n), dtype=np.float32)
+    coarse = rng.random((n, n), dtype=np.float32)
+    for r, axis in ((3, 0), (3, 1), (1, 0)):
+        acc = np.zeros_like(coarse)
+        for k in range(-r, r + 1):
+            acc += np.roll(coarse, k, axis=axis)
+        coarse = acc / np.float32(2 * r + 1)
+    lo, hi = float(np.min(coarse)), float(np.max(coarse))
+    coarse = (coarse - lo) / np.float32(max(1e-6, hi - lo))
+    tex = np.asarray(0.55 * fine + 0.45 * coarse, dtype=np.float32)
+    tex.setflags(write=False)
+    return tex
+
+
+def chalk_mask(h: int, w: int, x0: int, y0: int, amount: float) -> Float:
+    """Facteur d'opacité (h, w) du grain de craie. Le motif est fixé à l'image (pas à l'objet) : comme
+    sur un vrai tableau, c'est la surface qui retient plus ou moins la poudre."""
+    tex = _chalk_texture()
+    n = CHALK_TILE
+    ys = (np.arange(h) + y0) % n
+    xs = (np.arange(w) + x0) % n
+    t = tex[ys[:, None], xs[None, :]]
+    cut = 0.42 * amount  # sous ce seuil, la craie n'a pas accroché
+    factor = np.clip((t - cut) / 0.3, 0.0, 1.0) * (1.0 - 0.25 * amount) + 0.25 * amount * t
+    return np.asarray(factor, dtype=np.float32)
+
+
 def apply_object_effects(
-    layer: Float, style: dict[str, Any], scale: float
+    layer: Float, style: dict[str, Any], scale: float, origin: tuple[int, int] = (0, 0)
 ) -> list[tuple[Float, float, float]]:
-    """Calques à superposer, du fond vers l'avant : (image, décalage x, décalage y) en pixels."""
+    """Calques à superposer, du fond vers l'avant : (image, décalage x, décalage y) en pixels.
+    ``origin`` : position du calque dans l'image (ancre le grain de craie)."""
     fx = effect_values(style)
     out: list[tuple[Float, float, float]] = []
+    if float(fx["fx_chalk"]) > 0:
+        h, w = layer.shape[:2]
+        layer = layer * chalk_mask(h, w, origin[0], origin[1], float(fx["fx_chalk"]))[..., None]
     alpha = layer[..., 3]
     if float(fx["fx_shadow"]) > 0:
         blurred = gaussian_blur(alpha[..., None], float(fx["fx_shadow_blur"]) * scale / 2.0)[..., 0]
@@ -227,7 +267,7 @@ def paint_with_effects(painter: QPainter, local_rect: QRectF, style: dict[str, A
         draw(lp)
     finally:
         lp.end()
-    layers = apply_object_effects(image_to_array(layer_img), style, scale)
+    layers = apply_object_effects(image_to_array(layer_img), style, scale, (x0, y0))
     painter.save()
     painter.resetTransform()
     for arr, dx, dy in layers:

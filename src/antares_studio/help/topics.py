@@ -46,6 +46,12 @@ TOPICS: tuple[Topic, ...] = (
         "Effets et filtres",
         "lueur ombre flou glow étalonnage vignettage grain sépia post-production",
     ),
+    Topic(
+        "ecriture-et-craie",
+        "Créer",
+        "Écriture progressive, craie et styles d'écriture",
+        "écrire lettre craie tableau noir police manuscrit machine à écrire 3blue1brown décor",
+    ),
     Topic("modeles", "Créer", "Modèles pédagogiques", "template gabarit"),
     Topic("animations", "Animer", "Animations prédéfinies", "preset orbite apparition"),
     Topic("images-cles", "Animer", "Images clés et Timeline", "keyframe clé lecture"),
@@ -64,6 +70,13 @@ TOPICS: tuple[Topic, ...] = (
     Topic("graphiques", "Sciences", "Graphiques de données (CSV)", "csv courbe données tableur"),
     Topic("kepler", "Sciences", "Orbites de Kepler et unités", "orbite ellipse verlet unités"),
     Topic("planete-3d", "Sciences", "Planète 3D avec Blender (facultatif)", "blender 3d planète"),
+    Topic(
+        "grilles-et-deformations",
+        "Sciences",
+        "Grilles, transformations et espace courbé",
+        "grille matrice algèbre linéaire déformation espace-temps gravité onde relativité 3blue1brown",
+    ),
+    Topic("solides-3d", "Sciences", "Solides 3D", "cube sphère pyramide cylindre cône polyèdre tore 3d"),
     Topic("modeles-3d", "Sciences", "Modèles 3D (glTF)", "gltf glb 3d modèle objet import"),
     Topic("images", "Ressources", "Images importées", "png svg jpeg photo"),
     Topic("provenance-et-licences", "Ressources", "Provenance et licences", "licence droits auteur"),
@@ -266,6 +279,39 @@ def _tutorials() -> str:
     return "\n".join(f"- **{t.title}** ({t.minutes} min) — {t.summary}" for t in TUTORIALS)
 
 
+def _text_styles() -> str:
+    from antares_studio.domain.kinds import WRITE_STYLES
+    from antares_studio.domain.text_styles import TEXT_STYLES
+
+    ways = dict(WRITE_STYLES)
+    lines = ["| Style | Police | Écriture | Usage |", "|---|---|---|---|"]
+    for label, desc, values in TEXT_STYLES.values():
+        font = values.get("params.font_family", "—")
+        way = ways.get(str(values.get("params.write_style", "")), "—").split(" (")[0]
+        lines.append(f"| **{label}** | {font} | {way} | {desc} |")
+    return "\n".join(lines)
+
+
+def _fonts() -> str:
+    from antares_studio.resources.fonts import BUNDLED_FONTS
+
+    lines = ["| Police | Famille | Usage | Licence |", "|---|---|---|---|"]
+    lines += [f"| **{f.family}** | {f.category} | {f.usage} | {f.license} |" for f in BUNDLED_FONTS]
+    return "\n".join(lines)
+
+
+def _backdrops() -> str:
+    from antares_studio.domain.model import BACKDROPS
+
+    return "\n".join(f"- **{label}**" for key, label in BACKDROPS.items() if key)
+
+
+def _solids() -> str:
+    from antares_studio.domain.kinds import SOLID_SHAPES
+
+    return ", ".join(f"**{label}**" for _shape, label in SOLID_SHAPES) + "."
+
+
 GENERATED = {
     "objets": _objects,
     "animations": _animations,
@@ -277,4 +323,8 @@ GENERATED = {
     "effets": _effects,
     "filtres": _scene_looks,
     "sons": _sounds,
+    "styles-ecriture": _text_styles,
+    "polices": _fonts,
+    "decors": _backdrops,
+    "solides": _solids,
 }

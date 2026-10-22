@@ -26,7 +26,7 @@ ANTARES Studio est en version de développement. Voici, honnêtement, ce qu'il n
 
 ## Sciences
 
-- Champs de vecteurs, tableaux et matrices dans les équations, écriture progressive d'une formule.
+- Champs de vecteurs, tableaux et matrices dans les équations.
 - Échelle logarithmique et plusieurs courbes par graphique.
 - Simulations à N corps réglables depuis l'interface : seuls les modèles « Trois corps en huit » et « Étoile double » sont fournis.
 
@@ -34,6 +34,8 @@ ANTARES Studio est en version de développement. Voici, honnêtement, ce qu'il n
 
 - Textures, animations et squelettes des modèles glTF (seules la forme et la couleur de base sont dessinées) ; fichiers `.gltf` à ressources séparées (exportez en `.glb`).
 - Caméra 3D et rendu GPU : la caméra est un cadrage 2D.
+- Surfaces de fonctions z = f(x, y), axes 3D gradués ; solides qui s'interpénètrent (tri des faces sans tampon de profondeur).
+- Polices « à un seul trait » (écriture au stylo tracée trait par trait) : l'écriture progressive dessine le contour des lettres.
 
 ## Exemples
 

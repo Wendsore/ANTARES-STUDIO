@@ -19,7 +19,9 @@ Tous les objets partagent : **Position** (x, y en pixels), **Rotation** (degrés
 - **Texte** : double-clic pour écrire ; *Largeur max* > 0 active le retour à la ligne automatique. Police, gras, italique, alignement dans l'Inspecteur.
 - **Encadré (légende, avertissement)** : texte sur fond arrondi, idéal pour « non à l'échelle » ou une définition. Voir [Rigueur scientifique](rigueur-scientifique.md).
 - **Image** : passez par **Objet > Importer une image…**. Voir [Images importées](images.md).
-- **Équation (formule)** : voir [Équations](equations.md).
+- **Équation (formule)** : voir [Équations](equations.md). Texte et équation peuvent s'écrire progressivement : voir [Écriture progressive](ecriture-et-craie.md).
+- **Grille** : plan quadrillé transformable et déformable, voir [Grilles et espace courbé](grilles-et-deformations.md).
+- **Solide 3D** : cube, sphère, pyramide, polyèdres, tore… voir [Solides 3D](solides-3d.md).
 - **Graphique (courbe de données)** : passez par **Objet > Importer des données (CSV) en graphique…**. Voir [Graphiques](graphiques.md).
 - **Séquence d'images (rendu 3D)** : créée par **Objet > Planète 3D (Blender, facultatif)…**. Voir [Planète 3D](planete-3d.md).
 - **Groupe** : voir [Scènes, calques et groupes](scenes-et-calques.md).

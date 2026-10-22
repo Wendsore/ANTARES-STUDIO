@@ -26,7 +26,8 @@ from PySide6.QtWidgets import (
 from antares_studio.app import theme, thumbnails
 from antares_studio.audio import sfx
 from antares_studio.domain.effects import EFFECT_PRESETS, OBJECT_LOOKS, SCENE_LOOKS
-from antares_studio.domain.kinds import KINDS
+from antares_studio.domain.kinds import SOLID_SHAPES, resolve_variant
+from antares_studio.domain.text_styles import TEXT_STYLES
 from antares_studio.resources.licenses import STATUS_COMPLETE, InventoryRow, choice_for
 from antares_studio.resources.templates import TEMPLATES
 from antares_studio.timeline.presets import PRESETS
@@ -42,6 +43,8 @@ CATEGORIES: dict[str, tuple[str, ...]] = {
     "Texte": ("text", "callout"),
     "Graphiques": ("chart",),
     "Maths": ("formula",),
+    "Grilles et espace": ("grid:plane", "grid:transform", "grid:spacetime", "grid:wave"),
+    "Solides 3D": tuple(f"solid3d:{shape}" for shape, _label in SOLID_SHAPES),
     "3D": ("model3d", "image_sequence"),
     "Images": ("image",),
     "Organisation": ("group", "camera"),
@@ -70,13 +73,14 @@ def _header(text: str) -> QListWidgetItem:
 
 
 class LibraryDock(QWidget):
-    addRequested = Signal(str)  # kind
+    addRequested = Signal(str)  # type, ou « type:variante » (``OBJECT_VARIANTS``)
     presetRequested = Signal(str)  # preset id
     templateRequested = Signal(str)  # template id
     assetActivated = Signal(str)  # asset id (double-clic dans l'onglet Ressources)
     objectLookRequested = Signal(str)  # identifiant OBJECT_LOOKS, appliqué à la sélection
     sceneLookRequested = Signal(str)  # identifiant SCENE_LOOKS, appliqué à la scène courante
     soundRequested = Signal(str)  # identifiant de bruitage, inséré à la tête de lecture
+    textStyleRequested = Signal(str)  # identifiant TEXT_STYLES, appliqué aux textes sélectionnés
     favoritesChanged = Signal(list)  # identifiants de favoris (persistés par la fenêtre principale)
 
     def __init__(
@@ -107,10 +111,12 @@ class LibraryDock(QWidget):
 
         self.objects = QListWidget()
         self.objects.setIconSize(QSize(32, 32))
+        self.objects.setWordWrap(True)
+        self.objects.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # libellés repliés
         for cat, kinds in CATEGORIES.items():
             self.objects.addItem(_header(cat))
             for kind in kinds:
-                item = QListWidgetItem(KINDS[kind].label)
+                item = QListWidgetItem(resolve_variant(kind)[1])
                 item.setData(ID_ROLE, kind)
                 item.setToolTip("Double-clic : ajouter au centre de la vue")
                 self._make_favoritable(item, f"objet:{kind}")
@@ -141,6 +147,11 @@ class LibraryDock(QWidget):
         self.effects.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # libellés repliés
         groups: list[tuple[str, str, list[tuple[str, str, str]]]] = [
             (
+                "Styles d'écriture — textes et équations sélectionnés",
+                "écriture",
+                [(k, v[0], v[1]) for k, v in TEXT_STYLES.items()],
+            ),
+            (
                 "Effets d'objet — sur la sélection",
                 "objet",
                 [(k, v[0], v[1]) for k, v in OBJECT_LOOKS.items()],
@@ -169,7 +180,8 @@ class LibraryDock(QWidget):
         self.tabs.addTab(
             self._with_hint(
                 self.effects,
-                "Double-clic : effet sur les objets sélectionnés, ou filtre sur toute la scène. "
+                "Double-clic : style d'écriture ou effet sur les objets sélectionnés, ou filtre sur toute "
+                "la scène. "
                 "Réglages fins : Inspecteur, sections « Effets » et « Filtres ».",
             ),
             "Effets",
@@ -307,6 +319,8 @@ class LibraryDock(QWidget):
             self.sceneLookRequested.emit(ident)
         elif prefix == "animation":
             self.presetRequested.emit(ident)
+        elif prefix == "écriture":
+            self.textStyleRequested.emit(ident)
 
     # --- sons ---------------------------------------------------------------
     def selected_sound(self) -> str | None:

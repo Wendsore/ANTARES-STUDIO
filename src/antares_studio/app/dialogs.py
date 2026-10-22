@@ -112,6 +112,9 @@ class AboutDialog(QDialog):
             "- NumPy (licence BSD).\n"
             "- Icônes Lucide 1.51.0 (https://lucide.dev), licence ISC ; icônes dérivées de Feather sous\n"
             "  licence MIT. Texte complet : resources/icons/LICENSE-lucide.txt.\n"
+            "- Polices d'écriture livrées (Kalam, Caveat, Cabin Sketch, EB Garamond…) : Google Fonts,\n"
+            "  licence SIL OFL 1.1 (Apache 2.0 pour Permanent Marker et Special Elite). Textes complets :\n"
+            "  resources/fonts/<famille>/.\n"
             "- Données d'exemple des planètes : NASA Planetary Fact Sheet (domaine public).\n\n"
             "Licence d'ANTARES Studio : non encore décidée (voir README)."
         )
