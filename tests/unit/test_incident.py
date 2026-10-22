@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import zipfile
 from pathlib import Path
@@ -34,7 +35,7 @@ def test_report_lists_structure_but_never_project_content(tmp_path: Path) -> Non
     for secret in ("Titre confidentiel", "Phrase privée", "photo-secrete", str(Path.home())):
         assert secret not in everything
     assert "circle × 2" in content["projet.txt"] and "MANQUANTE" in content["projet.txt"]
-    assert "~/Projets" in content["projet.txt"] and "~/x" in content["diagnostic.txt"]
+    assert f"~{os.sep}Projets" in content["projet.txt"] and "~/x" in content["diagnostic.txt"]
     assert "n'a été envoyé nulle part" in content["LISEZMOI.txt"]
     assert not list(tmp_path.glob("*.part"))
 
@@ -56,10 +57,12 @@ def test_uncaught_errors_are_logged_bounded_and_included(tmp_path: Path) -> None
     assert "RuntimeError: panne simulée pour le test" in log
     for _ in range(400):
         try:
-            raise ValueError("x" * 1000)
+            raise ValueError("é" * 1000)  # 2 octets par caractère : la borne est en octets, pas en caractères
         except ValueError as exc:
             record_exception(type(exc), exc, exc.__traceback__, tmp_path)
-    assert (tmp_path / CRASH_LOG).stat().st_size <= MAX_LOG_BYTES + 4  # borné (UTF-8)
+    raw = (tmp_path / CRASH_LOG).read_bytes()
+    assert len(raw) <= MAX_LOG_BYTES and b"\r\n" not in raw
+    raw.decode("utf-8")  # aucun caractère coupé
     files = write_incident_report(tmp_path / "r.zip", "diag", None, None, tmp_path)
     assert "erreurs.log" in files
     with zipfile.ZipFile(tmp_path / "r.zip") as zf:

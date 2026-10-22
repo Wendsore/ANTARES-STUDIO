@@ -74,7 +74,10 @@ def test_ui03_inspector_edit_updates_model_and_canvas(window, qtbot) -> None:  #
 def test_ui03_canvas_drag_moves_object_with_single_undo_step(  # type: ignore[no-untyped-def]
     window, qtbot
 ) -> None:
-    node = window.add_node_of_kind("circle")
+    # selon la taille de la vue, le centre calculé tombe à 960,0000000000001 (vu sur la CI Windows) :
+    # l'objet est posé au centième près, et Ctrl+Z après le glisser le ramène exactement à 960
+    node = window.add_node_of_kind("circle", at=QPointF(960.0000000000001, 539.9999999999999))
+    assert node.position == [960.0, 540.0]
     _wait(qtbot)
     canvas = window.canvas
     start = canvas.canvas_to_widget(QPointF(node.position[0], node.position[1])).toPoint()

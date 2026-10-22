@@ -11,7 +11,7 @@ Toutes les évolutions **effectives** (pas les intentions). Format : date, lot, 
 - **Export** : profils **Plateforme** (YouTube, Shorts/Reels/TikTok, carré, 4:3) avec bandes noires, **WebM** VP9 + Opus, **GIF** animé ; **export en arrière-plan** (panneau Exports, projet figé à l'envoi) ; **aperçu rapide 360p** (Ctrl+Maj+E) ; **image courante en PNG**.
 - **Distribution** : **installateur Windows** par utilisateur (Inno Setup, sans droits administrateur), installé, autotesté et désinstallé en CI — **non signé** ; liste de recette Windows 11 et option `--capture` ; **rapport d'incident** local (`Aide > Créer un rapport d'incident…`), rien n'est envoyé.
 - **Accompagnement** : **astuces** à la première utilisation de chaque panneau (`Aide > Réafficher les astuces`) ; **3 exemples complets** (accueil et `Fichier > Exemples`), sans voix ; tutoriels 1 et 3 à 7 rejoués en test ; aide : nouvelle rubrique « Modèles 3D (glTF) », 16 rubriques mises à jour, tableau des profils enrichi.
-- Correctifs : une clé reposée gardait mal son interpolation ; un preset appliqué à des objets non concernés rendait le projet invalide ; défilement horizontal de l'Inspecteur de scène ; en-têtes de la Narration tronqués ; bouton « Close » non traduit.
+- Correctifs : plantage à la fermeture après un Copier ; journal d'erreurs borné en octets (Windows) ; objet ajouté posé au centième de pixel ; une clé reposée gardait mal son interpolation ; un preset appliqué à des objets non concernés rendait le projet invalide ; défilement horizontal de l'Inspecteur de scène ; en-têtes de la Narration tronqués ; bouton « Close » non traduit.
 - ADR-0006.
 
 ## [0.1.0.dev0] — 2026-10-22 — Design visuel, centre d'aide et tutoriels interactifs

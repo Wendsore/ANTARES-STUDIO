@@ -48,6 +48,13 @@ ASSET_PARAMS: dict[str, tuple[str, str]] = {
 }
 
 
+def wrapped_label(text: str) -> QLabel:
+    """Libellé sur toute la largeur qui passe à la ligne : un long nom de scène n'élargit pas le panneau."""
+    label = QLabel(text)
+    label.setWordWrap(True)
+    return label
+
+
 def compact_combo() -> QComboBox:
     """Liste déroulante qui rétrécit avec le panneau (texte élidé) : pas de défilement horizontal."""
     combo = QComboBox()
@@ -150,6 +157,8 @@ class InspectorDock(QWidget):
         self.body = QWidget()
         self.scroll_area.setWidget(self.body)
         self.form = QFormLayout(self.body)
+        # panneau étroit ou police large : le champ passe sous son libellé plutôt que de faire défiler
+        self.form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         document.selectionChanged.connect(lambda _s: self.rebuild())
         document.changed.connect(self.refresh_values)
@@ -182,7 +191,7 @@ class InspectorDock(QWidget):
         node = sel[0]
         self._node_id = node.id
         spec = KINDS.get(node.kind)
-        title = QLabel(f"<b>{spec.label if spec else node.kind}</b>")
+        title = wrapped_label(f"<b>{spec.label if spec else node.kind}</b>")
         self.form.addRow(title)
         self._add_editor("name", "Nom", ParamSpec("name", "str", node.name), node)
         self._add_editor("position.x", BASE_LABELS["position.x"], ParamSpec("x", "float", 0.0), node)
@@ -210,7 +219,7 @@ class InspectorDock(QWidget):
     def _build_multi_form(self, sel: list[Node]) -> None:
         """Propriétés communes à tous les objets sélectionnés ; une modification s'applique à chacun."""
         self._multi_ids = [n.id for n in sel]
-        self.form.addRow(QLabel(f"<b>{len(sel)} objets sélectionnés</b>"))
+        self.form.addRow(wrapped_label(f"<b>{len(sel)} objets sélectionnés</b>"))
         hint = QLabel(
             "Les modifications s'appliquent à tous (un seul Ctrl+Z les annule). « ≠ » : valeurs différentes."
         )
@@ -259,7 +268,7 @@ class InspectorDock(QWidget):
         scene = self.document.scene
         if scene is None:
             return
-        self.form.addRow(QLabel(f"<b>Scène : {scene.name}</b>"))
+        self.form.addRow(wrapped_label(f"<b>Scène : {scene.name}</b>"))
         name = QLineEdit(scene.name)
         name.editingFinished.connect(lambda: self._scene_attr("name", name.text().strip() or scene.name))
         self.form.addRow("Nom :", name)
@@ -305,16 +314,14 @@ class InspectorDock(QWidget):
         self.form.addRow("Transition :", kind)
         self.form.addRow("Durée de la transition :", tr_dur)
         c = self.document.project.canvas
-        self.form.addRow(QLabel(f"Canevas : {c.width} × {c.height} px, {float(c.fps):g} images/s"))
+        self.form.addRow(wrapped_label(f"Canevas : {c.width} × {c.height} px, {float(c.fps):g} images/s"))
         self._build_metadata_form()
-        hint = QLabel("Sélectionnez un objet pour modifier ses propriétés.")
-        hint.setWordWrap(True)
-        self.form.addRow(hint)
+        self.form.addRow(wrapped_label("Sélectionnez un objet pour modifier ses propriétés."))
 
     def _build_metadata_form(self) -> None:
         """Métadonnées scientifiques du projet (SCI-07/08) : représentation, échelle, notes, sources."""
         meta = self.document.project.scientific_metadata
-        self.form.addRow(QLabel("<b>Métadonnées scientifiques</b>"))
+        self.form.addRow(wrapped_label("<b>Métadonnées scientifiques</b>"))
         repr_box = compact_combo()
         # distinction du master prompt §9.3 : schématique / modélisation / simulation / données mesurées
         repr_box.addItem("Schématique (visuel arbitraire)", "schematic")
@@ -329,11 +336,12 @@ class InspectorDock(QWidget):
             lambda _i: self._meta("representation", str(repr_box.currentData()))
         )
         self.form.addRow("Représentation :", repr_box)
-        to_scale = QCheckBox("Distances et tailles à l'échelle")
+        to_scale = QCheckBox("à l'échelle")
+        to_scale.setObjectName("meta_to_scale")
         to_scale.setChecked(bool(meta.get("to_scale", False)))
         to_scale.setToolTip("Décoché : un avertissement « non à l'échelle » est attendu dans la vidéo.")
         to_scale.toggled.connect(lambda on: self._meta("to_scale", bool(on)))
-        self.form.addRow(to_scale)  # sur toute la largeur : pas de défilement horizontal
+        self.form.addRow("Distances et tailles :", to_scale)  # texte court : pas de défilement horizontal
         notes = QLineEdit(str(meta.get("notes", "")))
         notes.setPlaceholderText("Simplifications, hypothèses…")
         notes.editingFinished.connect(lambda: self._meta("notes", notes.text().strip()))

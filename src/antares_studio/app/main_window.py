@@ -1104,8 +1104,9 @@ class MainWindow(QMainWindow):
                     "Cette scène a déjà une caméra : seule la première caméra visible filme.", 6000
                 )
         center = at or self.canvas.visible_center_canvas()
-        x = max(0.0, min(float(c.width), center.x()))
-        y = max(0.0, min(float(c.height), center.y()))
+        # arrondi au centième (précision de l'Inspecteur) : pas de 960,0000000000001 selon la taille de la vue
+        x = round(max(0.0, min(float(c.width), center.x())), 2)
+        y = round(max(0.0, min(float(c.height), center.y())), 2)
         count = sum(1 for n in scene.nodes if n.kind == kind) + 1
         node = Node.create(
             kind,

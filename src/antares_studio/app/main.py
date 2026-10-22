@@ -11,10 +11,28 @@ from PySide6.QtWidgets import QApplication
 from antares_studio import __version__
 
 
+def release_clipboard() -> None:
+    """Vide le presse-papiers s'il contient des objets copiés dans ANTARES.
+
+    Des données posées depuis Python dans le presse-papiers font planter Qt à la destruction de
+    l'application (segfault à la fermeture, constaté après un Copier). Un texte copié ailleurs est
+    laissé intact.
+    """
+    from antares_studio.domain.clipboard import MIME_TYPE
+
+    app = QApplication.instance()
+    if isinstance(app, QApplication):
+        clipboard = app.clipboard()
+        mime = clipboard.mimeData()
+        if mime is not None and mime.hasFormat(MIME_TYPE):
+            clipboard.clear()
+
+
 def create_app(argv: list[str] | None = None) -> QApplication:
     app = QApplication.instance()
     if app is None:
         app = QApplication(argv if argv is not None else sys.argv)
+        app.aboutToQuit.connect(release_clipboard)
     app.setApplicationName("ANTARES Studio")
     app.setOrganizationName("Wendsore")
     app.setApplicationVersion(__version__)

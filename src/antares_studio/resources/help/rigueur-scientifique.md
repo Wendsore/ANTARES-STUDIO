@@ -15,7 +15,7 @@ Cliquez sur le fond du canevas : l'[Inspecteur](inspecteur.md) affiche les **Mé
 | À l'échelle | distances et tailles respectent les proportions réelles |
 | Mixte (préciser dans les notes) | plusieurs de ces cas dans la même vidéo |
 
-- **Distances et tailles à l'échelle** : décochez dès que les proportions sont déformées. Les crédits mentionnent alors « Schéma : distances et tailles non à l'échelle ».
+- **Distances et tailles : à l'échelle** : décochez dès que les proportions sont déformées. Les crédits mentionnent alors « Schéma : distances et tailles non à l'échelle ».
 - **Notes** : simplifications et hypothèses, en langage clair.
 
 ## Avertir dans l'image

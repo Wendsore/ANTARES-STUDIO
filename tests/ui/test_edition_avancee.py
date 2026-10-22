@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtTest import QTest
@@ -267,3 +272,29 @@ def test_drag_snaps_to_canvas_center_with_guides_and_ctrl_disables(window, qtbot
     assert node.position[0] == pytest.approx(957.0, abs=1.5) and node.position[0] != pytest.approx(960.0)
     window.act_guides.trigger()  # désactivés depuis le menu Affichage
     assert canvas.smart_guides is False
+
+
+QUIT_AFTER_COPY = """
+import sys
+from PySide6.QtCore import QTimer
+from antares_studio.app.main import create_app
+from antares_studio.app.main_window import MainWindow
+app = create_app([])
+window = MainWindow()
+window.show()
+node = window.add_node_of_kind("circle")
+window.document.set_selection([node.id])
+assert window.copy_selection()
+window.document.undo.mark_clean()
+QTimer.singleShot(100, window.close)
+QTimer.singleShot(200, app.quit)
+sys.exit(app.exec())
+"""
+
+
+def test_quitting_after_a_copy_does_not_crash(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """Qt plantait (segfault) à la fermeture si le presse-papiers gardait des objets copiés."""
+    src = Path(__file__).resolve().parents[2] / "src"
+    env = {**os.environ, "PYTHONPATH": str(src), "ANTARES_SETTINGS_DIR": str(tmp_path)}
+    done = subprocess.run([sys.executable, "-c", QUIT_AFTER_COPY], env=env, timeout=60, capture_output=True)
+    assert done.returncode == 0, done.stderr.decode(errors="replace")[-2000:]

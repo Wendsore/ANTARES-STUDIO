@@ -38,11 +38,23 @@ def test_incident_report_from_the_help_menu(window, tmp_path: Path) -> None:  # 
 
 
 def test_scene_inspector_never_scrolls_horizontally(window, qtbot) -> None:  # type: ignore[no-untyped-def]
-    window.add_template_scene("moon_phases")
-    window.document.set_selection([])
-    qtbot.wait(50)
-    area = window.inspector.findChild(QScrollArea)
-    assert area is not None and area.horizontalScrollBar().maximum() == 0
+    """Même avec une police plus large (polices de la CI, Windows) et un long nom de scène."""
+    from PySide6.QtWidgets import QApplication
+
+    original = QApplication.font()
+    bigger = QApplication.font()
+    bigger.setPointSizeF(original.pointSizeF() * 1.3)
+    QApplication.setFont(bigger)
+    try:
+        window.add_template_scene("moon_phases")
+        window.document.scene.name = "Une scène au nom vraiment très long pour un panneau étroit"
+        window.document.set_selection([])
+        window.inspector.rebuild()
+        qtbot.wait(50)
+        area = window.inspector.findChild(QScrollArea)
+        assert area is not None and area.horizontalScrollBar().maximum() == 0
+    finally:
+        QApplication.setFont(original)
 
 
 def test_capture_writes_every_screen_and_keeps_settings_isolated(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]

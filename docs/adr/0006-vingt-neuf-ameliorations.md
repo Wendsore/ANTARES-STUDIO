@@ -64,14 +64,25 @@ hors ligne, français, PySide6 + FFmpeg seuls, format de projet v1 lisible par l
   ces objets sont maintenant ignorés et signalés (`apply_preset_values` → liste des objets ignorés) ;
 - l'Inspecteur de scène défilait horizontalement (listes trop larges) : listes compactes, durée de
   transition sur sa propre ligne ;
+- **plantage à la fermeture** (segfault) après un Copier : des données posées depuis Python dans le
+  presse-papiers font planter Qt à la destruction de l'application. Le presse-papiers est vidé à la
+  fermeture **s'il contient des objets ANTARES** (un texte copié ailleurs est laissé) ; vu par la CI
+  Linux, reproduit en local, test en sous-processus ;
+- journal d'erreurs : borne en **octets** et fins de ligne `\n` (sous Windows, le mode texte écrivait
+  `\r\n` et dépassait la borne) ;
+- un objet ajouté est posé au **centième de pixel** : le centre de la vue tombait à 960,0000000000001
+  selon la taille de la fenêtre (CI Windows), valeur ensuite rétablie par Ctrl+Z ;
+- Inspecteur : libellés pleine largeur renvoyés à la ligne et lignes du formulaire repliées sous leur
+  libellé (police plus large sur la CI et sous Windows, long nom de scène) ; case « à l'échelle » à
+  côté de « Distances et tailles : » ;
 - `AddMarker` rendait inopérant l'objet retourné (copie) ; en-têtes de la Narration tronqués ; bouton
   « Close » non traduit ; identifiant de rubrique d'aide invalide pour le panneau Exports.
 
 ## Conséquences et preuves
 
-- 319 tests pytest verts sur Linux (contre 214) : 203 unitaires, 27 intégration (dont GIF, WebM, bandes
+- 320 tests pytest verts sur Linux (contre 214), **code de sortie 0** : 203 unitaires, 27 intégration (dont GIF, WebM, bandes
   noires, atténuation mesurée par FFT, GIF de projet complet, transition décodée au milieu d'un fondu),
-  86 interface (dont 6 tutoriels rejoués, enregistrement réel au micro de `ki`), 3 documentaires ;
+  87 interface (dont 6 tutoriels rejoués, enregistrement réel au micro de `ki`), 3 documentaires ;
   ruff et mypy strict propres.
 - Aide intégrée : 33 rubriques (nouvelle : « Modèles 3D (glTF) ») ; chaque chemin de menu cité est
   vérifié contre la vraie barre de menus.

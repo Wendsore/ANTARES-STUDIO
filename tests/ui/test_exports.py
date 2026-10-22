@@ -78,7 +78,7 @@ def test_background_export_uses_a_snapshot_and_frees_the_editor(window, qtbot, t
     opened: list[str] = []
     window.export_queue.opener = lambda url: opened.append(url.toLocalFile()) or True
     assert panel.open_btn.isEnabled() and panel.open_selected_folder()
-    assert opened == [str(tmp_path)]
+    assert [Path(p) for p in opened] == [tmp_path]  # QUrl : barres obliques, y compris sous Windows
     panel.clear_finished()
     assert panel.list.count() == 0 and window.export_queue.jobs == []
 
@@ -120,7 +120,7 @@ def test_quick_preview_renders_360p_and_opens_it(window, qtbot) -> None:  # type
     qtbot.waitUntil(lambda: job.status in ("done", "failed"), timeout=60000)
     assert job.status == "done", job.message
     assert job.result is not None and (job.result.probe.width, job.result.probe.height) == (640, 360)
-    assert opened == [str(job.output_path)]
+    assert [Path(p) for p in opened] == [job.output_path]
     job.output_path.unlink()
 
 

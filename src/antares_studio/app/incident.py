@@ -63,8 +63,11 @@ def record_exception(
     entry = f"--- {datetime.now().isoformat(timespec='seconds')} ---\n" + "".join(
         traceback.format_exception(exc_type, exc, tb)
     )
-    old = path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
-    path.write_text((old + entry)[-MAX_LOG_BYTES:], encoding="utf-8")
+    old = path.read_bytes() if path.is_file() else b""
+    # borne en octets, fins de ligne « \n » sur tous les systèmes (Windows écrirait « \r\n » en mode texte) ;
+    # un caractère UTF-8 coupé au début est écarté
+    tail = (old + entry.encode("utf-8"))[-MAX_LOG_BYTES:]
+    path.write_bytes(tail.decode("utf-8", errors="ignore").encode("utf-8"))
     return path
 
 

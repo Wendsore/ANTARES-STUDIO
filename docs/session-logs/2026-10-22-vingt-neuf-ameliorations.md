@@ -18,7 +18,11 @@
 
 ## Tests réellement exécutés (Linux)
 
-- `pytest` complet : **319 passed** (203 unitaires, 27 intégration, 86 interface, 3 documentaires) ; ruff, ruff format, mypy strict propres.
+- `pytest` complet : **320 passed, code de sortie 0** (203 unitaires, 27 intégration, 87 interface, 3 documentaires) ; ruff, ruff format, mypy strict propres.
+
+## Incident trouvé par la CI et réparé
+
+La CI de la PR #12 était rouge : segfault en fin de session sous Linux (après « 319 passed »), et sous Windows des tests dépendants du format des chemins, un journal d'erreurs dépassant sa borne (`\r\n`), une position 960,0000000000001, un Inspecteur qui défilait avec des polices plus larges. Le code de sortie local n'avait pas été lu (le résumé était filtré par `tail`) : le plantage existait aussi sur `ki`. Cause : objets ANTARES laissés dans le presse-papiers, que Qt détruit mal à la fermeture — l'application réelle plantait aussi en quittant après un Copier. Chaque cause a son test, vérifié en échec sur l'ancien code.
 - Mesures réelles : atténuation de la musique mesurée par FFT sur le fichier exporté ; GIF et WebM contrôlés par ffprobe ; bandes noires mesurées sur l'image ; enregistrement d'un vrai WAV par le micro de `ki`.
 - Tests des correctifs vérifiés **par mutation** (le correctif retiré, le test échoue) : interpolation conservée par `SetKeyframe`, objets ignorés par un preset, absence de défilement horizontal de l'Inspecteur.
 - Contrôle visuel : bulle d'astuce, page d'accueil avec la galerie d'exemples, Inspecteur de scène, captures `--capture`.
