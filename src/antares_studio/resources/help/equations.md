@@ -8,6 +8,12 @@ L'objet **Équation (formule)** affiche des formules mathématiques **sans insta
 2. Modifiez le champ **Formule** dans l'Inspecteur, ou double-cliquez sur l'équation.
 3. Réglez la taille, la police, l'italique des variables et les couleurs.
 
+## Transformer une formule en une autre
+
+Dans l'Inspecteur, le champ **Transformer en** reçoit une formule cible. L'animation **Transformer la formule** (Bibliothèque, onglet Animations) fait passer de l'une à l'autre : les symboles communs **glissent** jusqu'à leur nouvelle place, les autres disparaissent ou apparaissent en fondu. La progression **Transformation (0 → 1)** s'anime aussi à la main avec le losange ◆.
+
+Exemple : `E = mc^{2}` → `m = \frac{E}{c^{2}}`.
+
 ## Syntaxe
 
 | Écrire | Pour obtenir |
@@ -44,4 +50,4 @@ Un seul caractère n'a pas besoin d'accolades : `x^2` et `a_n` fonctionnent.
 
 La formule n'est **jamais exécutée** : c'est du texte mis en forme. Une commande inconnue, par exemple `\foo`, reste affichée telle quelle. Une accolade oubliée est fermée automatiquement. Si le rendu surprend, vérifiez l'orthographe des commandes et les accolades.
 
-Les tableaux, matrices et l'écriture progressive d'une formule ne sont pas encore disponibles.
+Les tableaux, matrices et l'écriture progressive d'une formule ne sont pas encore disponibles ; la transformation d'une formule en une autre l'est (voir plus haut).

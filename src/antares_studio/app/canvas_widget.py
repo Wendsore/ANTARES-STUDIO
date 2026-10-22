@@ -29,7 +29,9 @@ from PySide6.QtWidgets import QWidget
 
 from antares_studio.app import theme
 from antares_studio.app.document import ProjectDocument
+from antares_studio.domain.layout import Guide, Rect, snap_rect
 from antares_studio.rendering.qt_painter import ImageCache, local_bounds, paint_scene_state
+from antares_studio.rendering.transitions import FrameRenderer, transition_at
 from antares_studio.timeline.evaluator import NodeState, SceneState
 
 HANDLE_PX = 9.0
@@ -74,6 +76,8 @@ class _Drag:
     ]  # node_id -> {position.x, position.y, scale.x, scale.y, rotation_deg}
     first_push: bool = True
     moved: bool = False
+    start_rect: Rect | None = None  # boîte englobante des objets déplacés au départ (guides)
+    targets: tuple[Rect, ...] = ()  # boîtes des autres objets et du canevas
 
 
 def _qtransform(world: tuple[float, float, float, float, float, float]) -> QTransform:
@@ -97,11 +101,14 @@ class CanvasWidget(QWidget):
         self.show_safe_zones = False
         self.grid_step = 50
         self.snap_to_grid = False
+        self.smart_guides = True  # aimantation aux bords et centres des autres objets (Ctrl : désactivée)
+        self.guides: list[Guide] = []
         self._drag: _Drag | None = None
         self._pan_start: QPointF | None = None
         self._rubber: QRectF | None = None
         self._hover_handle = Handle.NONE
         self._image_cache = ImageCache()
+        self._frames: FrameRenderer | None = None  # aperçu des transitions (même rendu que l'export)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMinimumSize(320, 180)
@@ -154,7 +161,7 @@ class CanvasWidget(QWidget):
             return None
         canvas_pt = self.widget_to_canvas(widget_pos)
         for node in reversed(state.nodes):
-            if not node.visible or node.locked or node.kind == "group":
+            if not node.visible or node.locked or node.kind in ("group", "camera"):
                 continue
             inv, ok = _qtransform(node.world).inverted()
             if not ok:
@@ -223,16 +230,32 @@ class CanvasWidget(QWidget):
             painter.translate(self.offset)
             w = max(1, int(round(c.width * self.zoom)))
             h = max(1, int(round(c.height * self.zoom)))
-            paint_scene_state(
-                painter,
-                state,
-                c,
-                w,
-                h,
-                self.document.resolve_asset,
-                self._image_cache,
-                subtitle_style=self.document.project.subtitle_style,
-            )
+            if transition_at(self.document.project, state.scene_id, state.frame) is not None:
+                if self._frames is None or self._frames.project is not self.document.project:
+                    self._frames = FrameRenderer(
+                        self.document.project, self.document.resolve_asset, self._image_cache
+                    )
+                image = self._frames.render(
+                    state.scene_id,
+                    state.frame,
+                    w,
+                    h,
+                    use_camera=self.document.preview_camera,
+                    state=state,
+                    token=self.document.version,
+                )
+                painter.drawImage(QPointF(0, 0), image)
+            else:
+                paint_scene_state(
+                    painter,
+                    state,
+                    c,
+                    w,
+                    h,
+                    self.document.resolve_asset,
+                    self._image_cache,
+                    subtitle_style=self.document.project.subtitle_style,
+                )
             painter.restore()
         scene = self.document.scene
         if scene is not None and not scene.nodes:
@@ -241,8 +264,12 @@ class CanvasWidget(QWidget):
             self._paint_grid(painter, canvas_rect)
         if self.show_safe_zones:
             self._paint_safe_zones(painter, canvas_rect)
+        if state is not None and not self.document.preview_camera:
+            self._paint_camera_frames(painter, state)
         if state is not None:
             self._paint_selection(painter, state)
+        if self.guides:
+            self._paint_guides(painter)
         if self._rubber is not None:
             painter.setPen(QPen(theme.SELECTION, 1, Qt.PenStyle.DashLine))
             painter.setBrush(QBrush(theme.RUBBER_BAND))
@@ -294,6 +321,45 @@ class CanvasWidget(QWidget):
             i += 1
         painter.restore()
 
+    def _paint_guides(self, painter: QPainter) -> None:
+        painter.save()
+        painter.setPen(QPen(theme.GUIDE, 1))
+        for g in self.guides:
+            if g.axis == "x":
+                a, b = QPointF(g.value, g.start), QPointF(g.value, g.end)
+            else:
+                a, b = QPointF(g.start, g.value), QPointF(g.end, g.value)
+            painter.drawLine(self.canvas_to_widget(a), self.canvas_to_widget(b))
+        painter.restore()
+
+    def node_rect(self, node: NodeState) -> Rect:
+        """Boîte englobante (repère du canevas) de l'objet tel qu'il est affiché."""
+        r = self.node_world_polygon(node).boundingRect()
+        return (r.left(), r.top(), r.right(), r.bottom())
+
+    def _snap_targets(self, moving: set[str]) -> tuple[Rect | None, tuple[Rect, ...]]:
+        state = self.document.state()
+        if state is None:
+            return None, ()
+        c = self.document.project.canvas
+        ours: list[Rect] = []
+        targets: list[Rect] = [(0.0, 0.0, float(c.width), float(c.height))]
+        for n in state.nodes:
+            if not n.visible or n.kind in ("group", "camera"):
+                continue
+            (ours if n.id in moving else targets).append(self.node_rect(n))
+        if not ours:
+            return None, tuple(targets)
+        return (
+            (
+                min(r[0] for r in ours),
+                min(r[1] for r in ours),
+                max(r[2] for r in ours),
+                max(r[3] for r in ours),
+            ),
+            tuple(targets),
+        )
+
     def _paint_safe_zones(self, painter: QPainter, rect: QRectF) -> None:
         painter.save()
         painter.setPen(QPen(theme.SAFE_ZONE, 1, Qt.PenStyle.DashLine))
@@ -307,6 +373,27 @@ class CanvasWidget(QWidget):
         )
         painter.restore()
 
+    def _paint_camera_frames(self, painter: QPainter, state: SceneState) -> None:
+        """Vue de toute la scène : cadre de chaque caméra (plein = caméra active, pointillé = inactive)."""
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        scene = self.document.scene
+        active = next(
+            (n.id for n in (scene.nodes if scene else []) if n.kind == "camera" and state.node(n.id).visible),
+            None,
+        )
+        for node in state.nodes:
+            if node.kind != "camera":
+                continue
+            style = Qt.PenStyle.SolidLine if node.id == active else Qt.PenStyle.DashLine
+            painter.setPen(QPen(theme.CAMERA_FRAME, 2, style))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            poly = self.node_widget_polygon(node)
+            painter.drawPolygon(poly)
+            painter.setPen(theme.CAMERA_FRAME)
+            painter.drawText(poly.at(0) + QPointF(4, -6), f"Caméra : {node.name}")
+        painter.restore()
+
     def _paint_selection(self, painter: QPainter, state: SceneState) -> None:
         sel = self.document.selection
         if not sel:
@@ -318,6 +405,8 @@ class CanvasWidget(QWidget):
                 node = state.node(nid)
             except KeyError:
                 continue
+            if node.kind == "camera" and state.camera_id is not None:
+                continue  # vue à travers la caméra : son cadre est le bord de l'image
             poly = self.node_widget_polygon(node)
             painter.setPen(QPen(theme.LOCKED if node.locked else theme.SELECTION, 1.5))
             painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -327,6 +416,8 @@ class CanvasWidget(QWidget):
             try:
                 single = state.node(sel[0])
             except KeyError:
+                single = None
+            if single is not None and single.kind == "camera" and state.camera_id is not None:
                 single = None
             if single is not None and not single.locked:
                 handles = self._handles(single)
@@ -375,7 +466,16 @@ class CanvasWidget(QWidget):
         elif hit.id not in sel:
             self.document.set_selection([hit.id])
         ids = [i for i in self.document.selection]
-        self._drag = _Drag(Handle.MOVE, self.widget_to_canvas(pos), hit.id, self._capture(ids))
+        start_props = self._capture(ids)
+        start_rect, targets = self._snap_targets(self._moved_with_descendants(set(start_props)))
+        self._drag = _Drag(
+            Handle.MOVE,
+            self.widget_to_canvas(pos),
+            hit.id,
+            start_props,
+            start_rect=start_rect,
+            targets=targets,
+        )
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         pos = event.position()
@@ -409,6 +509,9 @@ class CanvasWidget(QWidget):
             self._finish_rubber(bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier))
             return
         self._drag = None
+        if self.guides:
+            self.guides = []
+            self.update()
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
         hit = self.hit_test(event.position())
@@ -479,8 +582,15 @@ class CanvasWidget(QWidget):
         if scene is None or state is None:
             return QTransform()
         node = scene.find_node(node_id)
-        if node is None or node.parent_id is None:
+        if node is None:
             return QTransform()
+        if node.parent_id is None or scene.find_node(node.parent_id) is None:
+            # objet à la racine : seule la caméra (zoom, inclinaison) sépare la scène de l'image
+            if node.kind == "camera":
+                return QTransform()
+            a, b, c, d, _, _ = state.camera
+            inv, ok = QTransform(a, b, c, d, 0, 0).inverted()
+            return inv if ok else QTransform()
         try:
             p = state.node(node.parent_id)
         except KeyError:
@@ -488,6 +598,20 @@ class CanvasWidget(QWidget):
         a, b, c, d, _, _ = p.world
         inv, ok = QTransform(a, b, c, d, 0, 0).inverted()
         return inv if ok else QTransform()
+
+    def _moved_with_descendants(self, ids: set[str]) -> set[str]:
+        scene = self.document.scene
+        out = set(ids)
+        if scene is None:
+            return out
+        changed = True
+        while changed:
+            changed = False
+            for n in scene.nodes:
+                if n.parent_id in out and n.id not in out:
+                    out.add(n.id)
+                    changed = True
+        return out
 
     def _snap(self, v: float) -> float:
         if self.snap_to_grid and self.grid_step > 0:
@@ -505,6 +629,17 @@ class CanvasWidget(QWidget):
         merge = not drag.first_push
         drag.first_push = False
         if drag.handle == Handle.MOVE:
+            self.guides = []
+            if (
+                self.smart_guides
+                and not self.snap_to_grid
+                and drag.start_rect is not None
+                and not modifiers & Qt.KeyboardModifier.ControlModifier
+            ):
+                r = drag.start_rect
+                moved = (r[0] + delta.x(), r[1] + delta.y(), r[2] + delta.x(), r[3] + delta.y())
+                dx, dy, self.guides = snap_rect(moved, list(drag.targets), 6.0 / self.zoom)
+                delta = QPointF(delta.x() + dx, delta.y() + dy)
             # ne déplace que les nœuds dont aucun ancêtre n'est aussi déplacé
             scene = self.document.scene
             ancestors_selected: set[str] = set()
@@ -594,7 +729,7 @@ class CanvasWidget(QWidget):
             return
         picked = []
         for node in state.nodes:
-            if not node.visible or node.locked or node.kind == "group":
+            if not node.visible or node.locked or node.kind in ("group", "camera"):
                 continue
             poly = self.node_widget_polygon(node)
             if rect.contains(poly.boundingRect()):
@@ -608,4 +743,13 @@ class CanvasWidget(QWidget):
         return QPointF(c.width / 2, c.height / 2)
 
     def visible_center_canvas(self) -> QPointF:
-        return self.widget_to_canvas(QPointF(self.width() / 2, self.height() / 2))
+        """Centre de la vue, dans le repère de la scène (la caméra éventuelle est inversée)."""
+        return self.to_scene(self.widget_to_canvas(QPointF(self.width() / 2, self.height() / 2)))
+
+    def to_scene(self, p: QPointF) -> QPointF:
+        """Point de l'image (canevas) -> point de la scène, à travers la caméra affichée."""
+        state = self.document.state()
+        if state is None or state.camera_id is None:
+            return p
+        inv, ok = _qtransform(state.camera).inverted()
+        return inv.map(p) if ok else p

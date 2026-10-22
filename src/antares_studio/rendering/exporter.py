@@ -26,10 +26,10 @@ from antares_studio.domain.model import Project
 from antares_studio.domain.validation import ProjectValidationError, validate_project
 from antares_studio.persistence.schema import project_to_dict
 from antares_studio.rendering import ffmpeg as ff
-from antares_studio.rendering.plan import AudioClipPlan, RenderPlan, build_render_plan
-from antares_studio.rendering.qt_painter import AssetResolver, ImageCache, render_state_to_image
+from antares_studio.rendering.plan import AudioClipPlan, RenderPlan, RenderProfile, build_render_plan
+from antares_studio.rendering.qt_painter import AssetResolver, ImageCache
+from antares_studio.rendering.transitions import FrameRenderer
 from antares_studio.resources.licenses import credits_lines
-from antares_studio.timeline.evaluator import evaluate
 
 ProgressCallback = Callable[[int, int], None]
 
@@ -53,8 +53,14 @@ class RenderResult:
     plan: RenderPlan
 
 
+# Atténuation de la musique sous la voix : compresseur déclenché par la narration (≈ -15 dB pendant
+# la parole, retour en 0,35 s). Seuils choisis pour une voix normalisée autour de -20 dBFS.
+DUCKING_FILTER = "sidechaincompress=threshold=0.02:ratio=12:attack=15:release=350:makeup=1"
+
+
 def _build_ffmpeg_command(ffmpeg: Path, plan: RenderPlan, tmp_output: Path) -> list[str]:
     profile = plan.profile
+    rate = plan.output_fps
     cmd = [
         str(ffmpeg),
         "-hide_banner",
@@ -69,12 +75,13 @@ def _build_ffmpeg_command(ffmpeg: Path, plan: RenderPlan, tmp_output: Path) -> l
         "-s",
         f"{plan.width}x{plan.height}",
         "-r",
-        f"{plan.fps_num}/{plan.fps_den}",
+        f"{rate.numerator}/{rate.denominator}",
         "-i",
         "pipe:0",
     ]
     filters: list[str] = []
     labels: list[str] = []
+    roles: list[str] = []
     for i, clip in enumerate(plan.audio):
         cmd += ["-i", clip.path]
         idx = i + 1
@@ -100,7 +107,17 @@ def _build_ffmpeg_command(ffmpeg: Path, plan: RenderPlan, tmp_output: Path) -> l
         parts.append("aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo")
         filters.append("".join(chain) + ",".join(parts) + f"[a{idx}]")
         labels.append(f"[a{idx}]")
+        roles.append(clip.role)
     if labels:
+        voices = [lab for lab, r in zip(labels, roles, strict=True) if r == "voice"]
+        music = [lab for lab, r in zip(labels, roles, strict=True) if r == "music"]
+        if plan.ducking and voices and music:
+            others = [lab for lab, r in zip(labels, roles, strict=True) if r not in ("voice", "music")]
+            filters.append("".join(voices) + f"amix=inputs={len(voices)}:normalize=0:duration=longest[voix]")
+            filters.append("[voix]asplit=2[voixsortie][voixcmd];[voixcmd]apad[voixcmdp]")
+            filters.append("".join(music) + f"amix=inputs={len(music)}:normalize=0:duration=longest[musique]")
+            filters.append(f"[musique][voixcmdp]{DUCKING_FILTER}[musiquebasse]")
+            labels = ["[voixsortie]", "[musiquebasse]", *others]
         # la vidéo est maître : l'audio est complété par du silence (apad) puis coupé à la durée (-t)
         mix = "".join(labels) + f"amix=inputs={len(labels)}:normalize=0:duration=longest[mix];[mix]apad[aout]"
         filters.append(mix)
@@ -136,9 +153,31 @@ def audio_plans_for_scene(
                 out_seconds=clip.out_seconds,
                 fade_in_seconds=clip.fade_in_seconds,
                 fade_out_seconds=clip.fade_out_seconds,
+                role=clip.role,
             )
         )
     return tuple(plans)
+
+
+def _frame_bytes(renderer: FrameRenderer, plan: RenderPlan, frame: int) -> bytes:
+    """Image ``frame`` de la scène au format du plan (bandes noires si ``content_rect``)."""
+    from PySide6.QtCore import QRectF
+    from PySide6.QtGui import QColor, QImage, QPainter
+
+    if plan.content_rect is None:
+        img = renderer.render(plan.scene_id, frame, plan.width, plan.height)
+    else:
+        x, y, w, h = plan.content_rect
+        inner = renderer.render(plan.scene_id, frame, w, h)
+        img = QImage(plan.width, plan.height, QImage.Format.Format_RGBA8888)
+        img.fill(QColor(0, 0, 0))
+        p = QPainter(img)
+        p.drawImage(QRectF(x, y, w, h), inner)
+        p.end()
+    data = bytes(img.constBits())
+    if len(data) != plan.width * plan.height * 4:
+        raise RenderError("taille d'image inattendue (stride non contigu)")
+    return data
 
 
 def export_video(
@@ -160,11 +199,7 @@ def export_video(
         raise ff.FFmpegNotFoundError(
             "ffprobe est introuvable à côté de FFmpeg ; l'export ne peut pas être vérifié."
         )
-    if not ff.has_encoder(ffmpeg, plan.profile.video_codec):
-        raise RenderError(
-            f"L'encodeur « {plan.profile.video_codec} » est absent de votre FFmpeg. "
-            "Installez un FFmpeg incluant libx264 ou choisissez un autre profil."
-        )
+    _check_encoders(ffmpeg, plan.profile)
     output = Path(plan.output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
     _check_free_space(output.parent, plan)
@@ -180,29 +215,15 @@ def export_video(
     cancel = cancel or threading.Event()
     encoder = ff.FrameEncoder(_build_ffmpeg_command(ffmpeg, plan, tmp_output))
     t0 = time.perf_counter()
-    cache = ImageCache()
+    renderer = FrameRenderer(project, assets, ImageCache())
     scene = project.scene(plan.scene_id)
     try:
         encoder.start()
         total = plan.total_frames
-        frame_bytes = plan.width * plan.height * 4
         for i in range(total):
             if cancel.is_set():
                 raise RenderCancelledError("export annulé")
-            state = evaluate(project, scene.id, plan.start_frame + i)
-            img = render_state_to_image(
-                state,
-                project.canvas,
-                plan.width,
-                plan.height,
-                assets,
-                cache,
-                subtitle_style=project.subtitle_style,
-            )
-            data = bytes(img.constBits())
-            if len(data) != frame_bytes:
-                raise RenderError("taille d'image inattendue (stride non contigu)")
-            encoder.write(data)
+            encoder.write(_frame_bytes(renderer, plan, plan.start_frame + i * plan.frame_step))
             if progress:
                 progress(i + 1, total)
         rc = encoder.finish()
@@ -347,10 +368,7 @@ def export_project(
             "0",
             "-i",
             str(listing),
-            "-c",
-            "copy",
-            "-movflags",
-            "+faststart",
+            *_concat_args(plans[0].profile),
             "-f",
             plans[0].profile.container,
             str(tmp_output),
@@ -369,7 +387,7 @@ def export_project(
             problems.append(f"{result.nb_frames} images au lieu de {total}")
         if (result.width, result.height) != (plans[0].width, plans[0].height):
             problems.append("résolution inattendue")
-        if not result.has_audio:
+        if plans[0].profile.has_audio and not result.has_audio:
             problems.append("piste audio absente")
         if problems:
             _cleanup(tmp_output)
@@ -414,14 +432,36 @@ def export_project(
     return ProjectRenderResult(output, manifest_path, result, elapsed, tuple(plans))
 
 
+def _concat_args(profile: RenderProfile) -> list[str]:
+    """Enchaînement des scènes : copie des flux, sauf GIF (palette commune recalculée sur l'ensemble)."""
+    if profile.container == "gif":
+        return profile.ffmpeg_video_args()
+    args = ["-c", "copy"]
+    if profile.container == "mp4":
+        args += ["-movflags", "+faststart"]
+    return args
+
+
+def _check_encoders(ffmpeg: Path, profile: RenderProfile) -> None:
+    needed = [profile.video_codec] + ([profile.audio_codec] if profile.has_audio else [])
+    for codec in needed:
+        if not ff.has_encoder(ffmpeg, codec):
+            raise RenderError(
+                f"L'encodeur « {codec} » est absent de votre FFmpeg. "
+                "Installez un FFmpeg complet (libx264, libvpx-vp9, libopus) ou choisissez un autre profil."
+            )
+
+
 def _verify(result: ff.ProbeResult, plan: RenderPlan) -> None:
     problems = []
     if (result.width, result.height) != (plan.width, plan.height):
         problems.append(f"résolution {result.width}x{result.height} au lieu de {plan.width}x{plan.height}")
     if result.nb_frames != plan.total_frames:
         problems.append(f"{result.nb_frames} images au lieu de {plan.total_frames}")
-    if result.fps.numerator * plan.fps_den != plan.fps_num * result.fps.denominator:
-        problems.append(f"cadence {result.fps} au lieu de {plan.fps_num}/{plan.fps_den}")
+    rate = plan.output_fps
+    # GIF : délais en centièmes de seconde, la cadence relue est arrondie (vérifiée sur la durée)
+    if plan.profile.container != "gif" and result.fps != rate:
+        problems.append(f"cadence {result.fps} au lieu de {rate}")
     if (plan.audio or plan.silent_audio) and not result.has_audio:
         problems.append("piste audio absente")
     if problems:

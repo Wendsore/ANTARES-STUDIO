@@ -2,6 +2,18 @@
 
 Toutes les évolutions **effectives** (pas les intentions). Format : date, lot, changements observables.
 
+## [0.1.0.dev0] — 2026-10-22 — Vingt-neuf améliorations (PR #12)
+
+- **Animation** : interpolation réglable par image clé (liste de la Timeline, clic droit sur un losange), **éditeur de courbe** (Bézier, préréglages) ; **repères** nommés (M, [ et ]) ; animations **calées** sur un repère, un sous-titre ou un clip audio ; **transitions** d'entrée de scène (fondus, glissements, volet) identiques à l'export ; objet **Caméra** 2D (point visé, zoom, inclinaison).
+- **Édition** : copier, couper, coller entre scènes et **entre projets** (images et sons recopiés avec leur licence) ; **guides d'alignement** avec aimantation (Ctrl pour ignorer) ; **Aligner et répartir** ; **édition multiple** dans l'Inspecteur (champ « ≠ ») ; grouper, dégrouper, dupliquer, supprimer annulables en un Ctrl+Z.
+- **Sciences** : graphiques en **barres** et **histogrammes** ; **simulation à N corps** avec les modèles « Trois corps en huit » et « Étoile double » ; **Objet > Valeur physique** (constantes sourcées, conversions, écriture × 10ⁿ) ; **transformation d'une formule** en une autre ; **modèles 3D glTF** (.glb) ombrés et orientables.
+- **Son et texte** : **enregistrement au micro** (WAV) ; rôle des pistes (voix, musique, effet) et **musique baissée sous la voix** à l'export ; sous-titres contrôlés pour la vitesse de lecture, la durée d'affichage et le contraste.
+- **Export** : profils **Plateforme** (YouTube, Shorts/Reels/TikTok, carré, 4:3) avec bandes noires, **WebM** VP9 + Opus, **GIF** animé ; **export en arrière-plan** (panneau Exports, projet figé à l'envoi) ; **aperçu rapide 360p** (Ctrl+Maj+E) ; **image courante en PNG**.
+- **Distribution** : **installateur Windows** par utilisateur (Inno Setup, sans droits administrateur), installé, autotesté et désinstallé en CI — **non signé** ; liste de recette Windows 11 et option `--capture` ; **rapport d'incident** local (`Aide > Créer un rapport d'incident…`), rien n'est envoyé.
+- **Accompagnement** : **astuces** à la première utilisation de chaque panneau (`Aide > Réafficher les astuces`) ; **3 exemples complets** (accueil et `Fichier > Exemples`), sans voix ; tutoriels 1 et 3 à 7 rejoués en test ; aide : nouvelle rubrique « Modèles 3D (glTF) », 16 rubriques mises à jour, tableau des profils enrichi.
+- Correctifs : plantage à la fermeture après un Copier ; journal d'erreurs borné en octets (Windows) ; objet ajouté posé au centième de pixel ; une clé reposée gardait mal son interpolation ; un preset appliqué à des objets non concernés rendait le projet invalide ; défilement horizontal de l'Inspecteur de scène ; en-têtes de la Narration tronqués ; bouton « Close » non traduit.
+- ADR-0006.
+
 ## [0.1.0.dev0] — 2026-10-22 — Design visuel, centre d'aide et tutoriels interactifs
 
 - Nouvelle apparence : thèmes **sombre** et **clair**, **taille du texte** réglable (`Affichage`), icônes sur les actions et la barre d'outils, logo, vignettes réelles des objets et des modèles dans la Bibliothèque, contrastes conformes WCAG 2.2 AA.

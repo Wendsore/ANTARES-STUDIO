@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
+from fractions import Fraction
 from typing import Any
 
 from antares_studio import __version__
@@ -13,6 +14,9 @@ from antares_studio.resources.licenses import provenance_warnings
 
 @dataclass(frozen=True)
 class RenderProfile:
+    """Profil d'export. ``fixed_frame`` : cadre imposé par une plateforme (bandes noires si le format du
+    projet diffère) ; sinon le petit côté du profil s'applique au format du projet (``output_size``)."""
+
     id: str
     label: str
     width: int
@@ -24,9 +28,46 @@ class RenderProfile:
     audio_codec: str = "aac"
     audio_bitrate: str = "160k"
     container: str = "mp4"
+    fixed_frame: bool = False
+    max_fps: float | None = None  # GIF : images sautées pour rester sous cette cadence
+    extension: str = ""  # extension du fichier (par défaut : celle du conteneur)
+    group: str = "Usage"
+
+    @property
+    def has_audio(self) -> bool:
+        return self.container != "gif"
+
+    @property
+    def suffix(self) -> str:
+        return "." + (self.extension or self.container)
 
     def ffmpeg_video_args(self) -> list[str]:
-        return [
+        if self.container == "gif":
+            # palette optimisée pour chaque fichier : couleurs fidèles sans tramage grossier
+            return [
+                "-filter_complex",
+                "[0:v]split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse",
+                "-loop",
+                "0",
+            ]
+        if self.video_codec == "libvpx-vp9":
+            return [
+                "-c:v",
+                "libvpx-vp9",
+                "-b:v",
+                "0",
+                "-crf",
+                str(self.crf),
+                "-row-mt",
+                "1",
+                "-deadline",
+                "good",
+                "-cpu-used",
+                "4",
+                "-pix_fmt",
+                self.pixel_format,
+            ]
+        args = [
             "-c:v",
             self.video_codec,
             "-preset",
@@ -35,9 +76,10 @@ class RenderProfile:
             str(self.crf),
             "-pix_fmt",
             self.pixel_format,
-            "-movflags",
-            "+faststart",
         ]
+        if self.container == "mp4":
+            args += ["-movflags", "+faststart"]
+        return args
 
 
 PROFILES: dict[str, RenderProfile] = {
@@ -46,6 +88,45 @@ PROFILES: dict[str, RenderProfile] = {
         RenderProfile("draft_720p", "Brouillon 720p (rapide)", 1280, 720, crf=28, preset="veryfast"),
         RenderProfile("final_1080p", "Final 1080p (qualité)", 1920, 1080, crf=18, preset="medium"),
         RenderProfile("mobile_720p", "Mobile 720p (fichier léger)", 1280, 720, crf=26, preset="slow"),
+        RenderProfile("preview_360p", "Aperçu rapide 360p", 640, 360, crf=30, preset="ultrafast"),
+        RenderProfile(
+            "youtube_1080p", "YouTube, Vimeo (16:9)", 1920, 1080, crf=18, fixed_frame=True, group="Plateforme"
+        ),
+        RenderProfile(
+            "vertical_1080x1920",
+            "Shorts, Reels, TikTok (9:16)",
+            1080,
+            1920,
+            crf=20,
+            fixed_frame=True,
+            group="Plateforme",
+        ),
+        RenderProfile("square_1080", "Carré (1:1)", 1080, 1080, crf=20, fixed_frame=True, group="Plateforme"),
+        RenderProfile(
+            "slides_4_3", "Présentation (4:3)", 1440, 1080, crf=18, fixed_frame=True, group="Plateforme"
+        ),
+        RenderProfile(
+            "webm_1080p",
+            "WebM VP9 + Opus (pages web, libre)",
+            1920,
+            1080,
+            video_codec="libvpx-vp9",
+            crf=32,
+            audio_codec="libopus",
+            audio_bitrate="128k",
+            container="webm",
+            group="Format",
+        ),
+        RenderProfile(
+            "gif_480",
+            "GIF animé 480p (sans son)",
+            854,
+            480,
+            video_codec="gif",
+            container="gif",
+            max_fps=15.0,
+            group="Format",
+        ),
     )
 }
 
@@ -59,6 +140,7 @@ class AudioClipPlan:
     out_seconds: float | None = None
     fade_in_seconds: float = 0.0
     fade_out_seconds: float = 0.0
+    role: str = "voice"
 
 
 @dataclass(frozen=True)
@@ -81,10 +163,23 @@ class RenderPlan:
     tool_versions: dict[str, str] = field(default_factory=dict)
     warnings: tuple[str, ...] = ()
     silent_audio: bool = False  # piste stéréo silencieuse si aucun clip (enchaînement de scènes homogène)
+    content_rect: tuple[int, int, int, int] | None = None  # image utile dans le cadre (bandes noires)
+    frame_step: int = 1  # 1 image sur N (GIF : cadence réduite)
+    ducking: bool = True  # musique atténuée pendant la voix (si les deux sont présents)
+
+    @property
+    def source_frames(self) -> int:
+        """Images de la scène couvertes par le plan."""
+        return max(0, self.end_frame - self.start_frame)
 
     @property
     def total_frames(self) -> int:
-        return max(0, self.end_frame - self.start_frame)
+        """Images écrites dans le fichier (une sur ``frame_step``)."""
+        return -(-self.source_frames // self.frame_step)
+
+    @property
+    def output_fps(self) -> Fraction:
+        return Fraction(self.fps_num, self.fps_den * self.frame_step)
 
     @property
     def profile(self) -> RenderProfile:
@@ -92,7 +187,7 @@ class RenderPlan:
 
     @property
     def duration_seconds(self) -> float:
-        return self.total_frames * self.fps_den / self.fps_num
+        return float(self.total_frames / self.output_fps)
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -105,8 +200,11 @@ def output_size(profile: RenderProfile, canvas: Canvas) -> tuple[int, int]:
     """Dimensions de sortie : le petit côté du profil (720 ou 1080) appliqué au format du projet.
 
     Un projet 16:9 garde exactement les dimensions du profil ; un projet vertical 9:16 ou carré n'est
-    plus étiré dans un cadre 16:9. Dimensions paires (exigence de H.264 en 4:2:0).
+    plus étiré dans un cadre 16:9. Dimensions paires (exigence de H.264 en 4:2:0). Un profil de
+    plateforme (``fixed_frame``) impose son cadre : voir ``content_rect``.
     """
+    if profile.fixed_frame:
+        return profile.width, profile.height
     short = min(profile.width, profile.height)
     cw, ch = canvas.width, canvas.height
     if cw >= ch:
@@ -114,6 +212,28 @@ def output_size(profile: RenderProfile, canvas: Canvas) -> tuple[int, int]:
     else:
         width, height = short, round(short * ch / cw)
     return width + width % 2, height + height % 2
+
+
+def content_rect(profile: RenderProfile, canvas: Canvas) -> tuple[int, int, int, int] | None:
+    """Zone (x, y, largeur, hauteur) de l'image du projet dans un cadre imposé ; None si elle le remplit.
+
+    L'image est réduite sans déformation et centrée ; le reste du cadre est noir.
+    """
+    if not profile.fixed_frame:
+        return None
+    fw, fh = profile.width, profile.height
+    k = min(fw / canvas.width, fh / canvas.height)
+    w, h = round(canvas.width * k), round(canvas.height * k)
+    if abs(w - fw) <= 1 and abs(h - fh) <= 1:
+        return None
+    return (fw - w) // 2, (fh - h) // 2, w, h
+
+
+def _ratio_label(w: int, h: int) -> str:
+    from math import gcd
+
+    g = gcd(w, h) or 1
+    return f"{w // g}:{h // g}"
 
 
 def build_render_plan(
@@ -138,7 +258,21 @@ def build_render_plan(
     if end - start > 10_000_000:
         raise ValueError("plage de rendu trop longue")
     width, height = output_size(profile, project.canvas)
+    rect = content_rect(profile, project.canvas)
+    if rect is not None:
+        project_ratio = _ratio_label(project.canvas.width, project.canvas.height)
+        warnings.append(
+            f"Le projet est au format {project_ratio} et le profil « {profile.label} » attend "
+            f"{_ratio_label(width, height)} : bandes noires ajoutées. Pour remplir le cadre, créez le "
+            "projet à ce format."
+        )
+    step = 1
+    if profile.max_fps is not None:
+        fps = float(project.canvas.fps)
+        while fps / step > profile.max_fps:
+            step += 1
     warnings.extend(provenance_warnings(project, scene_id))
+    warnings.extend(subtitle_warnings(project, scene_id))
     return RenderPlan(
         project_id=project.project_id,
         scene_id=scene_id,
@@ -151,9 +285,31 @@ def build_render_plan(
         start_frame=start,
         end_frame=end,
         output_path=output_path,
-        audio=audio,
         subtitles_path=subtitles_path,
         tool_versions=dict(tool_versions or {}),
         warnings=tuple(warnings),
-        silent_audio=silent_audio,
+        silent_audio=silent_audio and profile.has_audio,
+        content_rect=rect,
+        frame_step=step,
+        audio=audio if profile.has_audio else (),
+        ducking=bool(project.settings.get("ducking", True)),
     )
+
+
+def subtitle_warnings(project: Project, scene_id: str) -> list[str]:
+    """Sous-titres à revoir (lisibilité) et style peu contrasté, résumés pour le dialogue d'export."""
+    from antares_studio.audio.subtitles import check_subtitle_style, check_subtitles
+
+    scene = project.scene(scene_id)
+    out: list[str] = []
+    issues = check_subtitles(scene.subtitles, scene.duration_frames, project.canvas.fps)
+    if issues:
+        numbers = sorted({i.index + 1 for i in issues})
+        shown = ", ".join(str(n) for n in numbers[:6]) + ("…" if len(numbers) > 6 else "")
+        out.append(
+            f"Scène « {scene.name} » : {len(numbers)} sous-titre(s) à revoir (n° {shown}) — "
+            "voir Narration > Sous-titres."
+        )
+    if scene.subtitles:
+        out.extend(check_subtitle_style(project.subtitle_style))
+    return out

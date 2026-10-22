@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSpinBox,
     QToolButton,
     QVBoxLayout,
@@ -38,6 +39,29 @@ from antares_studio.domain.kinds import BASE_LABELS, KINDS, ParamSpec
 from antares_studio.domain.model import Node
 from antares_studio.domain.properties import is_animatable
 from antares_studio.timeline.evaluator import NodeState
+
+# Paramètres « ressource » : (type de ressource proposé, libellé de l'absence de choix)
+ASSET_PARAMS: dict[str, tuple[str, str]] = {
+    "params.asset_id": ("image", "(aucune image)"),
+    "params.data_asset_id": ("data", "(aucun fichier CSV)"),
+    "params.sequence_asset_id": ("sequence", "(aucune séquence)"),
+    "params.model_asset_id": ("model", "(aucun modèle 3D)"),
+}
+
+
+def wrapped_label(text: str) -> QLabel:
+    """Libellé sur toute la largeur qui passe à la ligne : un long nom de scène n'élargit pas le panneau."""
+    label = QLabel(text)
+    label.setWordWrap(True)
+    return label
+
+
+def compact_combo() -> QComboBox:
+    """Liste déroulante qui rétrécit avec le panneau (texte élidé) : pas de défilement horizontal."""
+    combo = QComboBox()
+    combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+    combo.setMinimumContentsLength(10)
+    return combo
 
 
 class ColorButton(QPushButton):
@@ -81,6 +105,40 @@ class ColorButton(QPushButton):
                 cb(self._value)
 
 
+def common_properties(nodes: list[Node]) -> list[tuple[str, str, ParamSpec]]:
+    """Propriétés éditables ensemble : transformation, apparence, puis paramètres et style partagés.
+
+    Un paramètre de style ou de paramétrage est commun s'il existe, avec le même type, dans le catalogue
+    de chacun des types d'objets sélectionnés (ex. « Remplissage » d'un cercle et d'un rectangle).
+    """
+    out: list[tuple[str, str, ParamSpec]] = [
+        ("rotation_deg", BASE_LABELS["rotation_deg"], ParamSpec("r", "float", 0.0)),
+        ("scale.x", BASE_LABELS["scale.x"], ParamSpec("sx", "float", 1.0, min=0.01)),
+        ("scale.y", BASE_LABELS["scale.y"], ParamSpec("sy", "float", 1.0, min=0.01)),
+        ("opacity", BASE_LABELS["opacity"], ParamSpec("o", "float", 1.0, min=0.0, max=1.0)),
+        ("z_index", "Ordre (plan)", ParamSpec("z", "int", 0)),
+        ("visible", BASE_LABELS["visible"], ParamSpec("v", "bool", True)),
+        ("locked", "Verrouillé", ParamSpec("l", "bool", False)),
+    ]
+    specs = [KINDS[n.kind] for n in nodes if n.kind in KINDS]
+    if not specs or len(specs) != len(nodes):
+        return out
+    for group in ("style", "params"):
+        first = specs[0].style if group == "style" else specs[0].params
+        for ps in first:
+            if ps.type not in ("float", "int", "bool", "color"):
+                continue
+            if all(
+                any(
+                    o.name == ps.name and o.type == ps.type
+                    for o in (s.style if group == "style" else s.params)
+                )
+                for s in specs[1:]
+            ):
+                out.append((f"{group}.{ps.name}", ps.label or ps.name, ps))
+    return out
+
+
 class InspectorDock(QWidget):
     def __init__(self, document: ProjectDocument, parent: QWidget | None = None):
         super().__init__(parent)
@@ -88,6 +146,8 @@ class InspectorDock(QWidget):
         self._editors: dict[str, QWidget] = {}
         self._key_buttons: dict[str, QToolButton] = {}
         self._node_id: str | None = None
+        self._multi_ids: list[str] = []  # sélection multiple : édition commune
+        self._mixed_labels: dict[str, QLabel] = {}
         self._updating = False
         self.sources_button: QPushButton | None = None
         outer = QVBoxLayout(self)
@@ -96,8 +156,14 @@ class InspectorDock(QWidget):
         self.scroll_area.setWidgetResizable(True)
         outer.addWidget(self.scroll_area)
         self.body = QWidget()
+        # largeur toujours égale à la zone visible, quelles que soient les polices du système (Windows) :
+        # les champs se resserrent ou passent sous leur libellé, jamais de défilement horizontal
+        self.body.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.scroll_area.setWidget(self.body)
         self.form = QFormLayout(self.body)
+        # panneau étroit ou police large : le champ passe sous son libellé plutôt que de faire défiler
+        self.form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         document.selectionChanged.connect(lambda _s: self.rebuild())
         document.changed.connect(self.refresh_values)
@@ -111,6 +177,8 @@ class InspectorDock(QWidget):
             self.form.removeRow(0)
         self._editors.clear()
         self._key_buttons.clear()
+        self._mixed_labels.clear()
+        self._multi_ids = []
 
     def rebuild(self) -> None:
         self._clear()
@@ -120,12 +188,15 @@ class InspectorDock(QWidget):
             return
         if len(sel) != 1:
             self._node_id = None
-            self._build_scene_form(sel)
+            if len(sel) > 1:
+                self._build_multi_form(sel)
+            else:
+                self._build_scene_form(sel)
             return
         node = sel[0]
         self._node_id = node.id
         spec = KINDS.get(node.kind)
-        title = QLabel(f"<b>{spec.label if spec else node.kind}</b>")
+        title = wrapped_label(f"<b>{spec.label if spec else node.kind}</b>")
         self.form.addRow(title)
         self._add_editor("name", "Nom", ParamSpec("name", "str", node.name), node)
         self._add_editor("position.x", BASE_LABELS["position.x"], ParamSpec("x", "float", 0.0), node)
@@ -150,17 +221,59 @@ class InspectorDock(QWidget):
                     self._add_editor(f"style.{ps.name}", ps.label or ps.name, ps, node)
         self.refresh_values()
 
+    def _build_multi_form(self, sel: list[Node]) -> None:
+        """Propriétés communes à tous les objets sélectionnés ; une modification s'applique à chacun."""
+        self._multi_ids = [n.id for n in sel]
+        self.form.addRow(wrapped_label(f"<b>{len(sel)} objets sélectionnés</b>"))
+        hint = QLabel(
+            "Les modifications s'appliquent à tous (un seul Ctrl+Z les annule). « ≠ » : valeurs différentes."
+        )
+        hint.setWordWrap(True)
+        hint.setProperty("role", "hint")
+        self.form.addRow(hint)
+        for path, label, spec in common_properties(sel):
+            editor = self._make_editor(path, spec)
+            mixed = QLabel("")
+            mixed.setToolTip("Les objets sélectionnés ont des valeurs différentes")
+            row = QWidget()
+            lay = QHBoxLayout(row)
+            lay.setContentsMargins(0, 0, 0, 0)
+            lay.addWidget(editor, 1)
+            lay.addWidget(mixed)
+            self._editors[path] = editor
+            self._mixed_labels[path] = mixed
+            self.form.addRow(label + " :", row)
+        self.refresh_values()
+
+    def _refresh_multi(self) -> None:
+        scene = self.document.scene
+        state = self.document.state()
+        if scene is None or state is None:
+            return
+        nodes = [n for n in (scene.find_node(i) for i in self._multi_ids) if n is not None]
+        if len(nodes) != len(self._multi_ids):
+            self.rebuild()
+            return
+        self._updating = True
+        try:
+            for path, editor in self._editors.items():
+                values = []
+                for n in nodes:
+                    try:
+                        st: NodeState | None = state.node(n.id)
+                    except KeyError:
+                        st = None
+                    values.append(self._current_value(n, st, path))
+                self._set_editor(editor, values[0])
+                self._mixed_labels[path].setText("≠" if any(v != values[0] for v in values) else "")
+        finally:
+            self._updating = False
+
     def _build_scene_form(self, sel: list[Node]) -> None:
         scene = self.document.scene
         if scene is None:
             return
-        if len(sel) > 1:
-            self.form.addRow(QLabel(f"<b>{len(sel)} objets sélectionnés</b>"))
-            self.form.addRow(
-                QLabel("Déplacez-les ensemble sur le canevas ; l'inspecteur détaille un objet à la fois.")
-            )
-            return
-        self.form.addRow(QLabel(f"<b>Scène : {scene.name}</b>"))
+        self.form.addRow(wrapped_label(f"<b>Scène : {scene.name}</b>"))
         name = QLineEdit(scene.name)
         name.editingFinished.connect(lambda: self._scene_attr("name", name.text().strip() or scene.name))
         self.form.addRow("Nom :", name)
@@ -176,18 +289,45 @@ class InspectorDock(QWidget):
         bg.set_value(scene.background)
         bg.changed.append(lambda v: self._scene_attr("background", v))
         self.form.addRow("Fond :", bg)
+        from antares_studio.rendering.transitions import TRANSITION_LABELS
+
+        kind = compact_combo()
+        kind.setObjectName("scene_transition")
+        for k, label in TRANSITION_LABELS.items():
+            kind.addItem(label, k)
+        kind.setCurrentIndex(max(0, kind.findData(scene.transition.kind)))
+        kind.setToolTip(
+            "Entrée de la scène depuis la dernière image de la scène précédente (du noir pour la première)"
+        )
+        tr_dur = QSpinBox()
+        tr_dur.setObjectName("scene_transition_duration")
+        tr_dur.setRange(1, 600)
+        tr_dur.setValue(scene.transition.duration_frames)
+        tr_dur.setSuffix(" images")
+        tr_dur.setToolTip(f"{scene.transition.duration_frames / fps:.2f} s ; prise sur le début de la scène")
+        tr_dur.setEnabled(scene.transition.kind != "none")
+
+        def set_transition() -> None:
+            from antares_studio.domain.model import SceneTransition
+
+            new = SceneTransition(str(kind.currentData()), int(tr_dur.value()))
+            tr_dur.setEnabled(new.kind != "none")
+            self._scene_attr("transition", new)
+
+        kind.currentIndexChanged.connect(lambda _i: set_transition())
+        tr_dur.editingFinished.connect(set_transition)
+        self.form.addRow("Transition :", kind)
+        self.form.addRow("Durée de la transition :", tr_dur)
         c = self.document.project.canvas
-        self.form.addRow(QLabel(f"Canevas : {c.width} × {c.height} px, {float(c.fps):g} images/s"))
+        self.form.addRow(wrapped_label(f"Canevas : {c.width} × {c.height} px, {float(c.fps):g} images/s"))
         self._build_metadata_form()
-        hint = QLabel("Sélectionnez un objet pour modifier ses propriétés.")
-        hint.setWordWrap(True)
-        self.form.addRow(hint)
+        self.form.addRow(wrapped_label("Sélectionnez un objet pour modifier ses propriétés."))
 
     def _build_metadata_form(self) -> None:
         """Métadonnées scientifiques du projet (SCI-07/08) : représentation, échelle, notes, sources."""
         meta = self.document.project.scientific_metadata
-        self.form.addRow(QLabel("<b>Métadonnées scientifiques</b>"))
-        repr_box = QComboBox()
+        self.form.addRow(wrapped_label("<b>Métadonnées scientifiques</b>"))
+        repr_box = compact_combo()
         # distinction du master prompt §9.3 : schématique / modélisation / simulation / données mesurées
         repr_box.addItem("Schématique (visuel arbitraire)", "schematic")
         repr_box.addItem("Modélisation (hypothèses explicites)", "model")
@@ -201,11 +341,12 @@ class InspectorDock(QWidget):
             lambda _i: self._meta("representation", str(repr_box.currentData()))
         )
         self.form.addRow("Représentation :", repr_box)
-        to_scale = QCheckBox("Distances et tailles à l'échelle")
+        to_scale = QCheckBox("à l'échelle")
+        to_scale.setObjectName("meta_to_scale")
         to_scale.setChecked(bool(meta.get("to_scale", False)))
         to_scale.setToolTip("Décoché : un avertissement « non à l'échelle » est attendu dans la vidéo.")
         to_scale.toggled.connect(lambda on: self._meta("to_scale", bool(on)))
-        self.form.addRow("", to_scale)
+        self.form.addRow("Distances et tailles :", to_scale)  # texte court : pas de défilement horizontal
         notes = QLineEdit(str(meta.get("notes", "")))
         notes.setPlaceholderText("Simplifications, hypothèses…")
         notes.editingFinished.connect(lambda: self._meta("notes", notes.text().strip()))
@@ -332,6 +473,12 @@ class InspectorDock(QWidget):
             w.setProperty("xs", xs)
             w.setProperty("ys", ys)
             return w
+        if spec.choices:
+            choice = QComboBox()
+            for value, text in spec.choices:
+                choice.addItem(text, value)
+            choice.currentIndexChanged.connect(lambda _i, p=path: self._commit(p, choice.currentData()))
+            return choice
         if path == "params.text":
             te = QPlainTextEdit()
             te.setMaximumHeight(80)
@@ -344,15 +491,10 @@ class InspectorDock(QWidget):
             combo.addItem("Droite", "right")
             combo.currentIndexChanged.connect(lambda _i, p=path: self._commit(p, combo.currentData()))
             return combo
-        if path in ("params.asset_id", "params.data_asset_id", "params.sequence_asset_id"):
+        if path in ASSET_PARAMS:
             combo = QComboBox()
-            wanted = {"params.data_asset_id": "data", "params.sequence_asset_id": "sequence"}.get(
-                path, "image"
-            )
-            combo.addItem(
-                {"image": "(aucune image)", "data": "(aucun fichier CSV)"}.get(wanted, "(aucune séquence)"),
-                "",
-            )
+            wanted, empty = ASSET_PARAMS[path]
+            combo.addItem(empty, "")
             for a in self.document.project.assets:
                 if a.kind == wanted:
                     combo.addItem(a.path, a.id)
@@ -374,6 +516,9 @@ class InspectorDock(QWidget):
 
     # --- synchronisation --------------------------------------------------
     def refresh_values(self) -> None:
+        if self._multi_ids:
+            self._refresh_multi()
+            return
         if self._node_id is None:
             self._refresh_metadata()
             return
@@ -479,10 +624,21 @@ class InspectorDock(QWidget):
             editor.property("ys").setValue(float(value[1]))
 
     def _commit(self, path: str, value: Any) -> None:
-        if self._updating or self._node_id is None:
+        if self._updating:
             return
         scene = self.document.scene
         if scene is None:
+            return
+        if self._multi_ids:
+            try:
+                with self.document.macro(f"Modifier {len(self._multi_ids)} objets"):
+                    for nid in self._multi_ids:
+                        if scene.find_node(nid) is not None:
+                            self.document.set_node_property(nid, path, value)
+            except ValueError:
+                self.refresh_values()
+            return
+        if self._node_id is None:
             return
         node = scene.find_node(self._node_id)
         if node is None:

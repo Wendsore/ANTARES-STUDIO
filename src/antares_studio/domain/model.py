@@ -15,7 +15,12 @@ SCHEMA_VERSION = 1
 
 Value = float | int | bool | str | list[float]
 
-EASINGS: tuple[str, ...] = ("step", "linear", "ease_in", "ease_out", "ease_in_out")
+EASINGS: tuple[str, ...] = ("step", "linear", "ease_in", "ease_out", "ease_in_out", "bezier")
+# Courbe par défaut d'une interpolation « bezier » (équivalent CSS ``ease``) : x1, y1, x2, y2.
+DEFAULT_BEZIER: tuple[float, float, float, float] = (0.25, 0.1, 0.25, 1.0)
+# Transitions d'entrée d'une scène (depuis la dernière image de la scène précédente, ou du noir).
+TRANSITIONS: tuple[str, ...] = ("none", "fade", "fade_black", "slide_left", "slide_up", "wipe")
+AUDIO_ROLES: tuple[str, ...] = ("voice", "music", "effect")
 
 # Style de sous-titres lisible sur téléphone : bande inférieure, fond semi-opaque, contour.
 DEFAULT_SUBTITLE_STYLE: dict[str, Any] = {
@@ -54,6 +59,8 @@ class Keyframe:
     frame: int
     value: Value
     easing: str = "linear"
+    # points de contrôle (x1, y1, x2, y2) quand ``easing == "bezier"`` ; x dans [0, 1]
+    bezier: list[float] | None = None
 
 
 @dataclass
@@ -69,13 +76,16 @@ class Track:
             by_frame[kf.frame] = kf
         return [by_frame[f] for f in sorted(by_frame)]
 
-    def set_keyframe(self, frame: int, value: Value, easing: str = "linear") -> Keyframe:
+    def set_keyframe(
+        self, frame: int, value: Value, easing: str = "linear", bezier: list[float] | None = None
+    ) -> Keyframe:
         for kf in self.keyframes:
             if kf.frame == frame:
                 kf.value = value
                 kf.easing = easing
+                kf.bezier = list(bezier) if bezier is not None else None
                 return kf
-        kf = Keyframe(frame=frame, value=value, easing=easing)
+        kf = Keyframe(frame=frame, value=value, easing=easing, bezier=list(bezier) if bezier else None)
         self.keyframes.append(kf)
         self.keyframes.sort(key=lambda k: k.frame)
         return kf
@@ -124,6 +134,7 @@ class AudioClip:
     fade_out_seconds: float = 0.0
     muted: bool = False
     duration_seconds: float = 0.0  # durée du fichier source, mesurée à l'import (informative)
+    role: str = "voice"  # voice | music | effect : la musique est atténuée sous la voix à l'export
 
     @classmethod
     def create(cls, asset_id: str, name: str = "", **kwargs: Any) -> AudioClip:
@@ -143,6 +154,27 @@ class Subtitle:
 
 
 @dataclass
+class Marker:
+    """Repère nommé sur la timeline d'une scène (caler une animation sur une phrase, une idée)."""
+
+    id: str
+    frame: int
+    label: str = ""
+
+    @classmethod
+    def create(cls, frame: int, label: str = "") -> Marker:
+        return cls(id=new_id("marker"), frame=frame, label=label)
+
+
+@dataclass
+class SceneTransition:
+    """Entrée de la scène : ``kind`` parmi ``TRANSITIONS`` sur ``duration_frames`` premières images."""
+
+    kind: str = "none"
+    duration_frames: int = 15
+
+
+@dataclass
 class Scene:
     id: str
     name: str
@@ -152,6 +184,8 @@ class Scene:
     tracks: list[Track] = field(default_factory=list)
     audio: list[AudioClip] = field(default_factory=list)
     subtitles: list[Subtitle] = field(default_factory=list)
+    markers: list[Marker] = field(default_factory=list)
+    transition: SceneTransition = field(default_factory=SceneTransition)
 
     @classmethod
     def create(cls, name: str, duration_frames: int = 300, **kwargs: Any) -> Scene:
@@ -191,6 +225,9 @@ class Scene:
 
     def audio_clip(self, clip_id: str) -> AudioClip | None:
         return next((c for c in self.audio if c.id == clip_id), None)
+
+    def sorted_markers(self) -> list[Marker]:
+        return sorted(self.markers, key=lambda m: (m.frame, m.id))
 
 
 @dataclass

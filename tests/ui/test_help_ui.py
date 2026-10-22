@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QKeySequence
-from PySide6.QtWidgets import QApplication, QMenu, QWidget
+from PySide6.QtWidgets import QApplication, QLabel, QMenu, QWidget
 
 from antares_studio.app import icons, theme, thumbnails, tutorial_panel
 from antares_studio.app.command_palette import CommandPalette, menu_actions
@@ -162,6 +162,27 @@ def test_welcome_template_choice_creates_the_project(window, qtbot) -> None:  # 
     assert window.new_project_from_template("moon_phases")
     assert window.document.project.title == "Phases de la Lune"
     assert not window.new_project_from_template("inexistant")
+
+
+def test_welcome_example_opens_a_complete_project(window, qtbot) -> None:  # type: ignore[no-untyped-def]
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    from antares_studio.resources.examples import EXAMPLES
+
+    dlg = WelcomeDialog([], set(), True, True, window)
+    qtbot.addWidget(dlg)
+    cards = [dlg.findChild(QWidget, f"welcome_example_{eid}") for eid in EXAMPLES]
+    assert all(c is not None for c in cards)
+    assert "Aucune voix" in " ".join(lbl.text() for lbl in dlg.findChildren(QLabel))  # dit honnêtement
+    QTest.mouseClick(cards[1], Qt.MouseButton.LeftButton, pos=QPoint(20, 20))
+    assert dlg.choice == ("example", "lois_kepler")
+    assert window.open_example("lois_kepler")
+    project = window.document.project
+    assert project.title == "Les lois de Kepler" and len(project.scenes) == 3
+    assert window.document.paths is None  # rien n'est écrit sur le disque tant qu'on n'enregistre pas
+    assert [a.text() for a in window.menu_examples.actions()] == [e.title for e in EXAMPLES.values()]
+    assert not window.open_example("inexistant")
 
 
 def test_welcome_page_shown_at_startup_only_when_enabled(window, qtbot) -> None:  # type: ignore[no-untyped-def]

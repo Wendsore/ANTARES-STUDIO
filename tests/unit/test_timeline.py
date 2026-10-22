@@ -150,9 +150,11 @@ def test_all_mvp_presets_generate_valid_tracks() -> None:
     from antares_studio.domain.validation import validate_project
 
     chart = make_node("chart", "Courbe")
-    scene.nodes.append(chart)
+    formula = make_node("formula", "Équation")
+    scene.nodes += [chart, formula]
+    targets = {"trace": chart, "morph": formula}  # « tracer » vise un graphique, « transformer » une formule
     for pid in PRESETS:
-        tracks = apply_preset(pid, chart if pid == "trace" else moon)  # « tracer » vise un graphique
+        tracks = apply_preset(pid, targets.get(pid, moon))
         assert tracks, pid
         scene.tracks = tracks
         assert validate_project(project) == [], pid

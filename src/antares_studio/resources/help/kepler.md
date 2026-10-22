@@ -30,6 +30,19 @@ Deux corps seulement, l'astre central fixe, aucune perturbation. Le temps de la 
 
 Bibliothèque, onglet *Modèles* : une scène complète avec un Soleil au foyer, une planète sur une ellipse d'excentricité 0,6, l'orbite tracée, un titre et l'encadré d'échelle.
 
+## Simulations à N corps
+
+Les modèles **Trois corps en huit** et **Étoile double** sont des **simulations numériques** : les positions sont calculées pas à pas (intégrateur Verlet-vitesse) à partir de la seule loi de la gravitation, puis posées image par image. La légende indique le nombre de pas et l'écart d'énergie relatif, preuve que le calcul reste fidèle.
+
+- **Trois corps en huit** : trois masses égales se suivent sur une même courbe en forme de huit (solution trouvée par C. Moore en 1993, démontrée par A. Chenciner et R. Montgomery en 2000).
+- **Étoile double** : deux étoiles de masses 2:1 tournent autour de leur **centre de masse** commun, marqué sur la scène ; la plus massive décrit la plus petite orbite.
+
+La représentation du projet passe à « simulation numérique » (voir [Rigueur scientifique](rigueur-scientifique.md)).
+
+## Écrire une valeur physique
+
+**Objet > Valeur physique (constantes et unités)…** ouvre un tableau des constantes sourcées et un convertisseur : saisissez une valeur, choisissez l'unité de départ et d'arrivée et le nombre de **chiffres significatifs**. Une conversion impossible (des mètres en secondes, par exemple) est refusée avec une explication. **Insérer dans la scène** ajoute un texte écrit à la française : virgule décimale, espaces entre milliers, puissances de dix (1,496 × 10¹¹ m).
+
 ## Constantes et unités de référence
 
 Les modèles utilisent des valeurs officielles, citées dans leurs sources :

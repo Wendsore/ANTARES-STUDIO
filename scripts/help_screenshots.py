@@ -78,6 +78,7 @@ def main(argv: list[str] | None = None) -> int:
 
     app = create_app([])
     window = MainWindow()
+    window.settings.set_show_tips(False)  # aucune bulle d'astuce sur les illustrations
     window.resize(1500, 900)
     window.show()
     window._set_document(ProjectDocument(create_project("Phases de la Lune", Canvas(), "moon_phases", 20)))

@@ -20,7 +20,10 @@ Sous le tableau, ANTARES signale :
 - une durée inférieure à 0,5 seconde ;
 - un sous-titre qui dépasse la fin de la scène ;
 - deux sous-titres qui se chevauchent ;
-- un texte trop long pour un téléphone : plus de 2 lignes ou plus de 84 caractères.
+- un texte trop long pour un téléphone : plus de 2 lignes ou plus de 84 caractères ;
+- une **lecture trop rapide** : plus de 17 caractères par seconde ;
+- un sous-titre affiché **plus de 7 secondes** : mieux vaut couper la phrase ;
+- un **style peu lisible** : contraste insuffisant entre le texte et son fond (règle WCAG), ou fond transparent sans contour contrasté.
 
 ## Importer et exporter
 

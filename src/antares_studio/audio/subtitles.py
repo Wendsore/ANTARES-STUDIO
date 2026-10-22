@@ -103,8 +103,57 @@ def format_vtt(subs: list[Subtitle], fps: Fraction) -> str:
     return "\n".join(chunks)
 
 
+# Repères de lecture confortable (pratique courante du sous-titrage français pour adultes) : au plus
+# 17 caractères par seconde, 7 s d'affichage au plus pour une ligne de 2 x 42 caractères.
+MAX_CPS = 17.0
+MAX_SECONDS = 7.0
+MIN_CONTRAST = 4.5  # WCAG 2.2 AA, texte normal
+
+
+def reading_speed(sub: Subtitle, fps: Fraction) -> float:
+    """Caractères par seconde (espaces compris, retours à la ligne exclus)."""
+    seconds = (sub.end_frame - sub.start_frame) / float(fps)
+    chars = len(sub.text.replace("\n", ""))
+    return chars / seconds if seconds > 0 else float("inf")
+
+
+def check_subtitle_style(style: dict[str, object]) -> list[str]:
+    """Contraste du texte des sous-titres sur leur fond (ou sur leur contour si le fond est transparent).
+
+    Le fond semi-opaque est évalué sur le cas défavorable : posé sur une image blanche puis noire.
+    """
+    from antares_studio.domain.colors import contrast_ratio, is_color, over, parse_color
+
+    text = str(style.get("color", "#FFFFFF"))
+    bg = str(style.get("background", "#00000000"))
+    outline = str(style.get("outline", "#000000"))
+    if not is_color(text):
+        return []
+    text_opaque = over(text, "#000000")
+    out: list[str] = []
+    if is_color(bg) and parse_color(bg)[3] >= 0.35:
+        worst = min(contrast_ratio(text_opaque, over(bg, base)) for base in ("#FFFFFF", "#000000"))
+        if worst < MIN_CONTRAST:
+            out.append(
+                f"Sous-titres : contraste texte/fond insuffisant ({worst:.1f}:1, {MIN_CONTRAST}:1 conseillé) "
+                "sur une image claire ou sombre."
+            )
+    else:
+        width = float(style.get("outline_width", 0.0) or 0.0)  # type: ignore[arg-type]
+        if (
+            width <= 0
+            or not is_color(outline)
+            or contrast_ratio(text_opaque, over(outline, "#000000")) < MIN_CONTRAST
+        ):
+            out.append(
+                "Sous-titres : fond transparent sans contour contrasté, illisibles sur certaines images."
+            )
+    return out
+
+
 def check_subtitles(subs: list[Subtitle], duration_frames: int, fps: Fraction) -> list[SubtitleIssue]:
-    """Diagnostics AUD-07 : chevauchements, durée < 0,5 s, texte vide, dépassement de scène, longueur."""
+    """Diagnostics AUD-07 : chevauchements, durée < 0,5 s, texte vide, dépassement de scène, longueur,
+    vitesse de lecture (> 17 caractères/s) et affichage trop long (> 7 s)."""
     issues: list[SubtitleIssue] = []
     ordered = sorted(enumerate(subs), key=lambda p: (p[1].start_frame, p[1].id))
     min_frames = max(1, int(round(0.5 * float(fps))))
@@ -121,4 +170,11 @@ def check_subtitles(subs: list[Subtitle], duration_frames: int, fps: Fraction) -
                 issues.append(SubtitleIssue(idx, f"chevauche le sous-titre {nidx + 1}"))
         if len(s.text) > 84 or s.text.count("\n") > 1:
             issues.append(SubtitleIssue(idx, "trop long pour un téléphone (max 2 lignes / 84 caractères)"))
+        cps = reading_speed(s, fps)
+        if s.text.strip() and s.end_frame > s.start_frame and cps > MAX_CPS:
+            issues.append(
+                SubtitleIssue(idx, f"lecture trop rapide : {cps:.0f} caractères/s ({MAX_CPS:.0f} au plus)")
+            )
+        if (s.end_frame - s.start_frame) / float(fps) > MAX_SECONDS:
+            issues.append(SubtitleIssue(idx, f"affiché plus de {MAX_SECONDS:.0f} s : découpez la phrase"))
     return issues

@@ -3,16 +3,28 @@
 ## Lancer l'export
 
 1. **Fichier > Exporter la vidéo…** (Ctrl+E).
-2. Choisissez un **profil** (tableau ci-dessous).
+2. Choisissez un **profil** (tableau ci-dessous) ; une ligne d'explication s'affiche sous la liste.
 3. Cochez **Toutes les scènes à la suite (vidéo complète)** pour enchaîner toutes les scènes ; sinon seule la scène affichée est exportée.
-4. Vérifiez le **Fichier de sortie**. Par défaut il est proposé dans le dossier `renders/` du projet ; **Parcourir…** pour le changer.
-5. **Exporter**.
+4. Vérifiez le **Fichier de sortie**. Par défaut il est proposé dans le dossier `renders/` du projet ; **Parcourir…** pour le changer. L'extension suit le profil (`.mp4`, `.webm`, `.gif`).
+5. **Exporter** pour suivre l'export dans la fenêtre, ou **En arrière-plan** pour continuer à travailler (voir plus bas).
 
 ## Les profils
 
 <!-- auto:profils -->
 
-Toutes les vidéos sont en **MP4, vidéo H.264 et son AAC**, lisibles partout : téléphones, navigateurs, plateformes vidéo, logiciels de montage. Les dimensions du tableau valent pour un projet 16:9. Pour un projet vertical ou carré, le petit côté du profil (720 ou 1080 pixels) est appliqué au format du projet : un projet 9:16 exporté en *Final 1080p* donne 1080 × 1920, sans déformation.
+- **Usage** : MP4 (vidéo H.264, son AAC), lisible partout. Les dimensions valent pour un projet 16:9 ; pour un projet vertical ou carré, le petit côté du profil est appliqué au format du projet : un projet 9:16 exporté en *Final 1080p* donne 1080 × 1920, sans déformation.
+- **Plateforme** : le cadre est **imposé** par la plateforme. Si le format du projet diffère, l'image est centrée avec des **bandes noires**, jamais étirée.
+- **WebM** : vidéo VP9 et son Opus, formats libres pour les pages web.
+- **GIF animé** : sans son, 15 images/s au plus (des images sont sautées si le projet est plus rapide), palette de couleurs calculée pour chaque vidéo. Un GIF est lourd : gardez-le court.
+
+## Export en arrière-plan
+
+**En arrière-plan** envoie l'export dans le panneau **Exports** (**Affichage > Exports**) et ferme la fenêtre : vous continuez à éditer pendant le rendu. La vidéo correspond au projet **tel qu'il était au moment de l'envoi** ; les modifications suivantes n'y figurent pas. Plusieurs exports s'enchaînent dans l'ordre. Dans le panneau : progression, **Annuler**, **Ouvrir le dossier**, **Retirer les travaux finis**. En quittant ANTARES pendant un export, une question vous laisse choisir de l'annuler ou de rester.
+
+## Aperçu rapide et image fixe
+
+- **Fichier > Aperçu rapide (360p)** (Ctrl+Maj+E) : exporte la scène en petit format, très vite, en arrière-plan, puis l'ouvre dans le lecteur vidéo du système. Idéal pour vérifier un rythme ou une synchronisation.
+- **Fichier > Exporter l'image courante (PNG)…** : enregistre l'image affichée, à la résolution du projet, caméra et transition comprises (vignette, illustration d'un document).
 
 ## Pendant l'export
 
@@ -37,7 +49,7 @@ ANTARES **vérifie** le fichier produit (dimensions, nombre d'images, durée, pr
 
 - **Ce que vous voyez est ce que vous obtenez** : le canevas et l'export utilisent le même moteur de dessin.
 - Toutes les images sont calculées, même si l'aperçu en a sauté.
-- Le son est mixé exactement : décalages, gains, fondus.
-- Une vidéo complète enchaîne les scènes sans réencodage ; une scène sans son reçoit une piste silencieuse pour rester synchronisée.
+- Le son est mixé exactement : décalages, gains, fondus, et [musique baissée sous la voix](narration.md).
+- Une vidéo complète enchaîne les scènes sans réencodage (sauf le GIF, recalculé pour garder une palette commune) ; une scène sans son reçoit une piste silencieuse pour rester synchronisée.
 
 Exporter sans ouvrir l'interface : voir [Ligne de commande](ligne-de-commande.md). Problème d'export : voir [Dépannage](depannage.md).

@@ -38,6 +38,12 @@ Pour des valeurs exactes (position en pixels, rotation en degrés, échelle), ut
 
 La barre d'état indique la position du pointeur en pixels de la vidéo et le niveau de zoom.
 
+## Copier, aligner, répartir
+
+- **Édition > Copier** (Ctrl+C), **Édition > Couper** (Ctrl+X), **Édition > Coller** (Ctrl+V) : les objets, avec leurs animations et leurs groupes, se collent dans une autre scène ou un **autre projet** ouvert ensuite ; une image ou un son utilisé est recopié avec sa fiche de licence.
+- **Édition > Aligner et répartir** : aligner à gauche, à droite, en haut, en bas, centrer ; avec un seul objet, l'alignement se fait sur le canevas. **Répartir horizontalement** ou **verticalement** espace régulièrement trois objets ou plus.
+- **Guides d'alignement** : en déplaçant un objet, des guides apparaissent quand ses bords ou son centre s'alignent sur ceux d'un autre objet ou du canevas, et l'objet s'y aimante. Maintenez **Ctrl** pour l'en empêcher ; **Affichage > Guides d'alignement (bords et centres)** les coupe.
+
 ## Aides visuelles
 
 Ces aides ne sont jamais exportées.

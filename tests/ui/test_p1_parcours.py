@@ -112,7 +112,10 @@ def test_gate5_p1_moon_phases_end_to_end(window, qtbot, tmp_path: Path) -> None:
     probe = dlg.render_result.probe
     assert (probe.width, probe.height, probe.nb_frames, probe.has_audio) == (1920, 1080, 90, True)
     assert probe.fps.numerator == 30 and probe.fps.denominator == 1
-    assert dlg.render_result.plan.warnings == ()
+    # aucune alerte de provenance ; seule reste la vitesse de lecture : 80 caractères en 3 s (> 17 car/s)
+    assert dlg.render_result.plan.warnings == (
+        "Scène « Scène 1 » : 2 sous-titre(s) à revoir (n° 1, 2) — voir Narration > Sous-titres.",
+    )
     srt = (tmp_path / "lune.srt").read_text(encoding="utf-8")
     assert "La Lune tourne autour de la Terre." in srt and "00:00:01,500 -->" in srt
     credits = (tmp_path / "lune.credits.txt").read_text(encoding="utf-8")

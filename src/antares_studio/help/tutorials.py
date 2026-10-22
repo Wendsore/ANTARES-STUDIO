@@ -505,10 +505,10 @@ TUTORIALS: tuple[Tutorial, ...] = (
                 "Importer la narration",
                 "Ouvrez l'onglet **Narration** (à côté de la Timeline) puis **Importer une narration…**. "
                 "Choisissez un fichier WAV, MP3, OGG, FLAC ou M4A : par exemple votre voix enregistrée "
-                "avec le dictaphone du téléphone ou avec Audacity.",
+                "avec le dictaphone du téléphone. Vous pouvez aussi cliquer sur **Enregistrer au micro…**.",
                 check=_audio_added,
                 target="narration_import",
-                hint="ANTARES n'enregistre pas le micro lui-même : préparez le fichier avec un autre outil.",
+                hint="Pas de fichier sous la main ? **Enregistrer au micro…** enregistre votre voix.",
             ),
             Step(
                 "Caler et régler le son",

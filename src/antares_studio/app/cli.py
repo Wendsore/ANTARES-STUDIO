@@ -32,6 +32,11 @@ def build_parser() -> argparse.ArgumentParser:
         metavar=("PROJET", "SORTIE.mp4"),
         help="exporte la première scène du projet sans ouvrir l'interface",
     )
+    parser.add_argument(
+        "--capture",
+        metavar="DOSSIER",
+        help="captures des écrans principaux pour la recette visuelle (docs/recette-windows-11.md)",
+    )
     parser.add_argument("--profile", default="final_1080p", help="profil d'export (défaut : final_1080p)")
     parser.add_argument("--scene", default="", help="identifiant ou nom de la scène à exporter")
     parser.add_argument(
@@ -199,4 +204,10 @@ def run_cli(argv: list[str]) -> int | None:
         return run_selftest()
     if args.export:
         return run_export(args.export[0], args.export[1], args.profile, args.scene, args.all_scenes)
+    if args.capture:
+        from antares_studio.app.captures import capture_screens
+
+        images = capture_screens(Path(args.capture))
+        print(f"{len(images)} captures écrites dans {Path(args.capture).resolve()} (voir captures.txt)")
+        return 0
     return None

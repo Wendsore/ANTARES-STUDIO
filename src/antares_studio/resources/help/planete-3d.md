@@ -21,4 +21,4 @@ Blender calcule en arrière-plan une sphère texturée, inclinée de 23,4°, qui
 
 Le rendu Cycles se fait sur le processeur. Comptez de quelques secondes à quelques minutes selon le nombre d'images, la taille et les échantillons. Commencez avec peu d'images pour essayer.
 
-L'import de modèles 3D (glTF, GLB), la caméra animée et le rendu GPU ne sont pas encore disponibles.
+Pour un objet 3D déjà modélisé (fichier `.glb`), voir [Modèles 3D (glTF)](modeles-3d.md). La caméra 3D et le rendu GPU ne sont pas encore disponibles.

@@ -19,6 +19,8 @@ from dataclasses import dataclass, fields
 from PySide6.QtGui import QColor, QFont, QPalette
 from PySide6.QtWidgets import QApplication, QStyleFactory
 
+from antares_studio.domain.colors import contrast_ratio, relative_luminance  # noqa: F401 (API du thème)
+
 
 @dataclass(frozen=True)
 class Palette:
@@ -52,6 +54,7 @@ class Palette:
     subtitle_block: str
     keyframe: str  # losanges d'images clés (Timeline, Inspecteur)
     keyframe_selected: str
+    marker: str  # repères de la Timeline (fanion et nom)
 
 
 DARK = Palette(
@@ -84,6 +87,7 @@ DARK = Palette(
     subtitle_block="#7A5512",
     keyframe="#FFD54F",
     keyframe_selected="#FF7043",
+    marker="#B388FF",
 )
 
 LIGHT = Palette(
@@ -116,6 +120,7 @@ LIGHT = Palette(
     subtitle_block="#7A5512",
     keyframe="#B26A00",
     keyframe_selected="#C2410C",
+    marker="#6A1B9A",
 )
 
 THEMES: dict[str, Palette] = {p.name: p for p in (DARK, LIGHT)}
@@ -143,6 +148,9 @@ TEXT_PAIRS: tuple[tuple[str, str], ...] = (
     ("text_muted", "ruler"),
     ("block_text", "clip"),
     ("block_text", "subtitle_block"),
+    ("marker", "ruler"),
+    ("marker", "track"),
+    ("marker", "track_alt"),
 )
 # Composants non textuels : 3:1 minimum (contour des champs, focus).
 COMPONENT_PAIRS: tuple[tuple[str, str], ...] = (
@@ -159,22 +167,6 @@ COMPONENT_PAIRS: tuple[tuple[str, str], ...] = (
 )
 
 
-def relative_luminance(color: str) -> float:
-    """Luminance relative sRGB (WCAG 2.2, définition « relative luminance »)."""
-    c = QColor(color)
-
-    def lin(v: float) -> float:
-        return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
-
-    return 0.2126 * lin(c.redF()) + 0.7152 * lin(c.greenF()) + 0.0722 * lin(c.blueF())
-
-
-def contrast_ratio(a: str, b: str) -> float:
-    la, lb = relative_luminance(a), relative_luminance(b)
-    hi, lo = max(la, lb), min(la, lb)
-    return (hi + 0.05) / (lo + 0.05)
-
-
 # --- jetons lus au moment du dessin (canevas, timeline) ------------------------------------------
 # Couleurs d'outils dessinées par-dessus le contenu de la scène : identiques dans les deux thèmes.
 CANVAS_SHADOW = QColor(0, 0, 0, 120)
@@ -187,6 +179,9 @@ GRID = QColor(255, 255, 255, 28)
 GRID_MAJOR = QColor(255, 255, 255, 60)
 SAFE_ZONE = QColor(255, 193, 7, 110)
 RUBBER_BAND = QColor(79, 195, 247, 60)
+GUIDE = QColor("#FF4FD8")  # guides d'alignement (magenta : visible sur fonds clairs et sombres)
+CAMERA_FRAME = QColor("#80DEEA")  # cadre des caméras (vue de toute la scène)
+MARKER = QColor(DARK.marker)  # repères de la Timeline (suit le thème)
 LOCKED = QColor("#EF5350")
 PLAYHEAD = QColor("#FF5252")
 # Couleurs qui suivent le thème (réaffectées par ``apply_theme``).
@@ -246,6 +241,7 @@ def _set_tokens(p: Palette) -> None:
     g["DANGER"] = QColor(p.danger)
     g["KEYFRAME"] = QColor(p.keyframe)
     g["KEYFRAME_SELECTED"] = QColor(p.keyframe_selected)
+    g["MARKER"] = QColor(p.marker)
 
 
 def qpalette(p: Palette) -> QPalette:

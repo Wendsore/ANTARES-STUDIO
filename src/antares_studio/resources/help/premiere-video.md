@@ -27,8 +27,8 @@ Appuyez sur **Espace** pour lire, de nouveau pour mettre en pause. La tête de l
 
 ## 5. Ajouter votre voix
 
-1. Enregistrez votre texte avec le dictaphone de votre téléphone ou avec Audacity (gratuit), en WAV ou MP3.
-2. **Narration > Importer une narration audio…** : le fichier est copié dans le projet et placé à la tête de lecture.
+1. Onglet **Narration**, **Enregistrer au micro…** ; ou enregistrez votre texte avec le dictaphone de votre téléphone ou avec Audacity (gratuit), en WAV ou MP3, puis **Narration > Importer une narration audio…**.
+2. Le fichier est copié dans le projet et placé à la tête de lecture.
 3. Une fiche de provenance s'ouvre : indiquez « Œuvre personnelle ».
 4. Glissez le clip dans la Timeline pour le caler.
 

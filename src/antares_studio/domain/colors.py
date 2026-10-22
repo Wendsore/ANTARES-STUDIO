@@ -35,3 +35,27 @@ def format_color(rgba: RGBA) -> str:
 def mix_color(c0: str, c1: str, u: float) -> str:
     a, b = parse_color(c0), parse_color(c1)
     return format_color(tuple(x + (y - x) * u for x, y in zip(a, b, strict=True)))  # type: ignore[arg-type]
+
+
+def relative_luminance(color: str) -> float:
+    """Luminance relative sRGB d'une couleur ``#RRGGBB[AA]`` (WCAG 2.2, « relative luminance »)."""
+    r, g, b, _a = parse_color(color)
+
+    def lin(v: float) -> float:
+        return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+
+
+def contrast_ratio(a: str, b: str) -> float:
+    """Rapport de contraste WCAG entre deux couleurs opaques (1 à 21)."""
+    la, lb = relative_luminance(a), relative_luminance(b)
+    hi, lo = max(la, lb), min(la, lb)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def over(top: str, bottom: str) -> str:
+    """Couleur obtenue en posant ``top`` (avec son alpha) sur ``bottom`` opaque."""
+    tr, tg, tb, ta = parse_color(top)
+    br, bg, bb, _ = parse_color(bottom)
+    return format_color((tr * ta + br * (1 - ta), tg * ta + bg * (1 - ta), tb * ta + bb * (1 - ta), 1.0))

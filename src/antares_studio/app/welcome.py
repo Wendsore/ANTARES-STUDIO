@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 from antares_studio import __version__
 from antares_studio.app import icons, theme, thumbnails
 from antares_studio.help.tutorials import TUTORIALS
+from antares_studio.resources.examples import EXAMPLES
 from antares_studio.resources.templates import template_labels
 
 DATA_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -35,18 +36,29 @@ CARD_W, CARD_H = 208, 117  # vignette 16:9 des cartes de modèle
 
 
 class _TemplateCard(QFrame):
-    def __init__(self, template_id: str, label: str, owner: WelcomeDialog):
+    """Carte cliquable : un modèle (``kind`` « template ») ou un projet d'exemple (« example »)."""
+
+    def __init__(
+        self,
+        template_id: str,
+        label: str,
+        owner: WelcomeDialog,
+        kind: str = "template",
+        thumbnail: str = "",
+        tooltip: str = "",
+    ):
         super().__init__()
         self.setProperty("role", "card")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setObjectName(f"welcome_template_{template_id}")
-        self.setToolTip(f"Nouveau projet à partir du modèle « {label} »")
+        self.setObjectName(f"welcome_{kind}_{template_id}")
+        self.setToolTip(tooltip or f"Nouveau projet à partir du modèle « {label} »")
         self._owner = owner
+        self._kind = kind
         self._tid = template_id
         lay = QVBoxLayout(self)
         lay.setContentsMargins(8, 8, 8, 8)
         img = QLabel()
-        img.setPixmap(thumbnails.template_pixmap(template_id, CARD_W, CARD_H))
+        img.setPixmap(thumbnails.template_pixmap(thumbnail or template_id, CARD_W, CARD_H))
         img.setFixedSize(CARD_W, CARD_H)
         text = QLabel(label.split(" (")[0])
         text.setWordWrap(True)
@@ -55,7 +67,7 @@ class _TemplateCard(QFrame):
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802 (API Qt)
         if event.button() == Qt.MouseButton.LeftButton:
-            self._owner.choose("template", self._tid)
+            self._owner.choose(self._kind, self._tid)
 
 
 class WelcomeDialog(QDialog):
@@ -117,11 +129,35 @@ class WelcomeDialog(QDialog):
         col1.addWidget(self._section("Projets récents"))
         col1.addWidget(self.recent, 1)
 
-        # colonne 2 : modèles
+        # colonne 2 : projets d'exemple complets, puis modèles d'une scène
         grid = QGridLayout()
         grid.setSpacing(10)
+        grid.addWidget(self._section("Exemples complets"), 0, 0, 1, 2)
+        examples_hint = QLabel(
+            "Vidéos terminées à plusieurs scènes : titre, sous-titres, repères, transitions et crédits. "
+            "Aucune voix n'est fournie : enregistrez la vôtre dans le panneau Narration."
+        )
+        examples_hint.setProperty("role", "hint")
+        examples_hint.setWordWrap(True)
+        grid.addWidget(examples_hint, 1, 0, 1, 2)
+        for i, (eid, ex) in enumerate(EXAMPLES.items()):
+            card = _TemplateCard(
+                eid,
+                ex.title,
+                self,
+                "example",
+                ex.thumbnail,
+                f"Ouvrir l'exemple « {ex.title} » : {ex.summary}",
+            )
+            grid.addWidget(card, 2 + i // 2, i % 2)
+        first = grid.rowCount()
+        grid.addWidget(self._section("Commencer avec un modèle"), first, 0, 1, 2)
+        hint = QLabel("Un clic crée un projet 16:9, 1080p, 30 images/s à partir du modèle.")
+        hint.setProperty("role", "hint")
+        hint.setWordWrap(True)
+        grid.addWidget(hint, first + 1, 0, 1, 2)
         for i, (tid, label) in enumerate(template_labels().items()):
-            grid.addWidget(_TemplateCard(tid, label, self), i // 2, i % 2)
+            grid.addWidget(_TemplateCard(tid, label, self), first + 2 + i // 2, i % 2)
         grid.setRowStretch(grid.rowCount(), 1)  # cartes compactes en haut, pas étirées
         cards = QWidget()
         cards.setLayout(grid)
@@ -132,11 +168,6 @@ class WelcomeDialog(QDialog):
         scroll.setMinimumWidth(grid.sizeHint().width() + scroll.verticalScrollBar().sizeHint().width() + 4)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         col2 = QVBoxLayout()
-        col2.addWidget(self._section("Commencer avec un modèle"))
-        hint = QLabel("Un clic crée un projet 16:9, 1080p, 30 images/s à partir du modèle.")
-        hint.setProperty("role", "hint")
-        hint.setWordWrap(True)
-        col2.addWidget(hint)
         col2.addWidget(scroll, 1)
 
         # colonne 3 : apprendre et diagnostics

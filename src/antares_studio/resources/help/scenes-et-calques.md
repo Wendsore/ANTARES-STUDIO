@@ -15,6 +15,16 @@ Ajouter un **modèle** depuis la Bibliothèque crée aussi une nouvelle scène (
 
 À l'export, la case « Toutes les scènes à la suite » les enchaîne dans l'ordre de la liste.
 
+### Transitions
+
+Une scène peut **entrer** par une transition, réglée dans l'[Inspecteur](inspecteur.md) quand rien n'est sélectionné : fondu enchaîné, fondu au noir, glissement vers la gauche ou vers le haut, volet. La transition part de la dernière image de la scène précédente (du noir pour la première) et occupe les premières images de la scène : la durée totale ne change pas. Elle est visible dans l'éditeur et identique à l'export.
+
+### Caméra
+
+**Objet > Caméra (cadrage animé)** ajoute une caméra : sa **position** est le point visé, son **zoom** (1 = cadre entier) et sa **rotation** (inclinaison) s'animent comme toute propriété. La vidéo montre ce que voit la caméra.
+
+**Affichage > Voir à travers la caméra**, décoché, montre toute la scène avec le cadre de la caméra dessiné par-dessus : pratique pour la placer. Seule la première caméra visible filme.
+
 ## Les objets (calques)
 
 Partie basse : l'arbre des objets de la scène, du premier plan à l'arrière-plan.

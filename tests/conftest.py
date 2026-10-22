@@ -7,6 +7,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 
+def pytest_unconfigure(config):  # type: ignore[no-untyped-def]
+    """Comme à la fermeture de l'application : sans cela, Qt plante en fin de session après un Copier."""
+    from antares_studio.app.main import release_clipboard
+
+    release_clipboard()
+
+
 def pytest_configure(config):  # type: ignore[no-untyped-def]
     """Isole QSettings dans un dossier temporaire : les tests n'écrivent jamais les préférences réelles."""
     import tempfile

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import copy
+import json
+import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QSize, Qt, QTimer
+from PySide6.QtCore import QMimeData, QPointF, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
@@ -30,6 +32,8 @@ from antares_studio.app.diagnostics import diagnostics_report
 from antares_studio.app.dialogs import AboutDialog, DiagnosticsDialog, NewProjectDialog
 from antares_studio.app.document import ProjectDocument
 from antares_studio.app.export_dialog import ExportDialog
+from antares_studio.app.export_queue import ExportJob, ExportQueue, ExportsPanel
+from antares_studio.app.first_tips import TipManager
 from antares_studio.app.help_center import HelpCenter
 from antares_studio.app.inspector_dock import InspectorDock
 from antares_studio.app.layers_dock import LayersDock
@@ -40,7 +44,11 @@ from antares_studio.app.provenance_dialog import LicenseInventoryDialog, edit_as
 from antares_studio.app.settings import AppSettings
 from antares_studio.app.timeline_dock import TimelineDock
 from antares_studio.app.tutorial_panel import Highlighter, TutorialPanel
+from antares_studio.app.units_dialog import UnitsDialog
+from antares_studio.domain.clipboard import MIME_TYPE as CLIPBOARD_MIME
+from antares_studio.domain.clipboard import PastePayload, copy_nodes, read_payload, remap_assets
 from antares_studio.domain.commands import (
+    AddMarker,
     AddNode,
     AddScene,
     RemoveNode,
@@ -51,13 +59,19 @@ from antares_studio.domain.commands import (
 )
 from antares_studio.domain.ids import new_id
 from antares_studio.domain.kinds import spec_for
-from antares_studio.domain.model import AssetLicense, Canvas, Node, Scene
+from antares_studio.domain.layout import ALIGN_MODES, align_deltas, distribute_deltas
+from antares_studio.domain.model import AssetLicense, Canvas, Marker, Node, Scene
 from antares_studio.domain.validation import ProjectValidationError
 from antares_studio.help import topics
 from antares_studio.help.tutorials import TUTORIALS, TUTORIALS_BY_ID, TutorialContext
 from antares_studio.persistence.schema import ProjectFormatError
 from antares_studio.persistence.store import PROJECT_SUFFIX, ProjectStore, resolve_project_root
-from antares_studio.rendering.exporter import ProjectRenderResult
+from antares_studio.rendering import ffmpeg as ff
+from antares_studio.rendering.exporter import ProjectRenderResult, RenderError, audio_plans_for_scene
+from antares_studio.rendering.plan import build_render_plan
+from antares_studio.rendering.qt_painter import ImageCache
+from antares_studio.rendering.transitions import FrameRenderer
+from antares_studio.resources.examples import EXAMPLES, build_example
 from antares_studio.resources.licenses import inventory
 from antares_studio.resources.templates import TEMPLATES, create_project, scale_warning_node, template_labels
 from antares_studio.timeline.presets import apply_preset
@@ -72,6 +86,7 @@ CONTEXT_TOPICS: dict[str, str] = {
     "dock_timeline": "images-cles",
     "dock_narration": "narration",
     "dock_tutorial": "tutoriels",
+    "dock_exports": "export-video",
 }
 # Icônes Lucide des actions (recolorées à chaque changement de thème).
 ACTION_ICONS: dict[str, str] = {
@@ -79,12 +94,20 @@ ACTION_ICONS: dict[str, str] = {
     "act_open": "folder-open",
     "act_save": "save",
     "act_export": "clapperboard",
+    "act_quick_preview": "fast-forward",
+    "act_export_png": "image-down",
     "act_inventory": "shield-check",
+    "act_units": "calculator",
     "act_scale_warning": "triangle-alert",
+    "act_add_marker": "bookmark",
+    "act_camera_view": "video",
     "act_undo": "undo-2",
     "act_redo": "redo-2",
     "act_delete": "trash-2",
-    "act_duplicate": "copy",
+    "act_duplicate": "copy-plus",
+    "act_copy": "copy",
+    "act_cut": "scissors",
+    "act_paste": "clipboard-paste",
     "act_group": "group",
     "act_play": "play",
     "act_go_start": "skip-back",
@@ -97,7 +120,18 @@ ACTION_ICONS: dict[str, str] = {
     "act_welcome": "house",
     "act_shortcuts": "keyboard",
     "act_diag": "wrench",
+    "act_incident": "bug",
     "act_about": "info",
+    "act_distribute_h": "align-horizontal-distribute-center",
+    "act_distribute_v": "align-vertical-distribute-center",
+}
+ALIGN_ICONS: dict[str, str] = {
+    "left": "align-start-vertical",
+    "hcenter": "align-center-vertical",
+    "right": "align-end-vertical",
+    "top": "align-start-horizontal",
+    "vcenter": "align-center-horizontal",
+    "bottom": "align-end-horizontal",
 }
 
 
@@ -122,6 +156,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("ANTARES Studio")
         self.resize(1400, 860)
         self.canvas = CanvasWidget(self.document)
+        self.canvas.setObjectName("canvas")
         self.setCentralWidget(self.canvas)
         self._build_docks()
         self._build_actions()
@@ -136,6 +171,11 @@ class MainWindow(QMainWindow):
         self._tutorial_timer = QTimer(self)
         self._tutorial_timer.setInterval(300)
         self._tutorial_timer.timeout.connect(self.tutorial.refresh)
+        self.tips = TipManager(
+            self,
+            self.settings,
+            blocked=lambda: self.tutorial.run is not None and self.tutorial_dock.isVisible(),
+        )
         self._apply_icons()
         self._set_whats_this()
         self.statusBar().showMessage(
@@ -190,6 +230,15 @@ class MainWindow(QMainWindow):
         )
         self.splitDockWidget(self.inspector_dock, self.tutorial_dock, Qt.Orientation.Vertical)
         self.tutorial_dock.hide()
+        self.export_queue = ExportQueue(self)
+        self.export_queue.jobFinished.connect(self._export_job_finished)
+        self.exports = ExportsPanel(self.export_queue)
+        self.exports_dock = self._dock(
+            "Exports", self.exports, Qt.DockWidgetArea.BottomDockWidgetArea, "dock_exports"
+        )
+        self.tabifyDockWidget(self.narration_dock, self.exports_dock)
+        self.exports_dock.hide()
+        self.timeline_dock.raise_()
         for widget, name in (
             (self.canvas, "canvas"),
             (self.library.search, "library_search"),
@@ -219,6 +268,7 @@ class MainWindow(QMainWindow):
             self.timeline_dock,
             self.narration_dock,
             self.tutorial_dock,
+            self.exports_dock,
         )
 
     def _dock(self, title: str, widget: QWidget, area: Qt.DockWidgetArea, name: str) -> QDockWidget:
@@ -250,7 +300,23 @@ class MainWindow(QMainWindow):
         self.act_save = self._action("&Enregistrer", self.save_project, QKeySequence.StandardKey.Save)
         self.act_save_as = self._action("Enregistrer &sous…", self.save_project_as, "Ctrl+Shift+S")
         self.act_export = self._action("E&xporter la vidéo…", self.export_video, "Ctrl+E")
+        self.act_quick_preview = self._action(
+            "Aperçu &rapide (360p)",
+            self.quick_preview,
+            "Ctrl+Shift+E",
+            "Rend la scène en basse définition en arrière-plan puis l'ouvre dans votre lecteur vidéo",
+        )
+        self.act_export_png = self._action(
+            "Exporter l'&image courante (PNG)…",
+            self.export_still,
+            tip="Enregistre l'image affichée, à la taille du projet (vignette, affiche, diapositive)",
+        )
         self.act_inventory = self._action("Inventaire des &licences et crédits…", self.show_inventory)
+        self.act_units = self._action(
+            "&Valeur physique (constantes et unités)…",
+            self.insert_physical_value,
+            tip="Constantes sourcées et conversions contrôlées ; le résultat devient un objet Texte",
+        )
         self.act_scale_warning = self._action(
             "Avertissement d'é&chelle (« non à l'échelle »)", self.add_scale_warning
         )
@@ -265,6 +331,25 @@ class MainWindow(QMainWindow):
         self.act_select_all = self._action(
             "&Tout sélectionner", self.select_all, QKeySequence.StandardKey.SelectAll
         )
+        self.act_copy = self._action("&Copier", self.copy_selection, QKeySequence.StandardKey.Copy)
+        self.act_cut = self._action("Co&uper", self.cut_selection, QKeySequence.StandardKey.Cut)
+        self.act_paste = self._action("C&oller", self.paste, QKeySequence.StandardKey.Paste)
+        self._paste_count = 0
+        QApplication.clipboard().dataChanged.connect(self._on_clipboard_changed)
+        self.align_actions: dict[str, QAction] = {
+            mode: self._action(label, lambda _c=False, m=mode: self.align_selection(m))
+            for mode, label in ALIGN_MODES.items()
+        }
+        self.act_distribute_h = self._action(
+            "Répartir horizontalement",
+            lambda: self.distribute_selection("x"),
+            tip="Espacement égal (3 objets ou plus)",
+        )
+        self.act_distribute_v = self._action(
+            "Répartir verticalement",
+            lambda: self.distribute_selection("y"),
+            tip="Espacement égal (3 objets ou plus)",
+        )
         self.act_group = self._action("&Grouper", self.group_selection, "Ctrl+G")
         self.act_ungroup = self._action("Dégrou&per", self.ungroup_selection, "Ctrl+Shift+G")
         self.act_play = self._action("&Lecture / pause", self.timeline.toggle_play, "Space")
@@ -274,6 +359,11 @@ class MainWindow(QMainWindow):
         self.act_frame_next = self._action(
             "Image suivante", lambda: self.document.set_frame(self.document.frame + 1), "."
         )
+        self.act_add_marker = self._action(
+            "Ajouter un &repère à l'image courante", self.add_marker, "M", "Repère nommé sur la Timeline"
+        )
+        self.act_prev_marker = self._action("Repère précédent", lambda: self.jump_marker(-1), "[")
+        self.act_next_marker = self._action("Repère suivant", lambda: self.jump_marker(1), "]")
         self.act_go_start = self._action("Début", self.timeline.go_start, "Home")
         self.act_go_end = self._action("Fin", self.timeline.go_end, "End")
         self.act_zoom_in = self._action(
@@ -291,11 +381,30 @@ class MainWindow(QMainWindow):
         self.act_grid.setCheckable(True)
         self.act_snap = self._action("&Aimanter à la grille", self.toggle_snap, "Ctrl+Shift+'")
         self.act_snap.setCheckable(True)
+        self.act_guides = self._action(
+            "Guides d'a&lignement (bords et centres)",
+            self.toggle_guides,
+            tip="Aimante un objet déplacé aux autres objets et au centre ; maintenir Ctrl pour l'ignorer",
+        )
+        self.act_guides.setCheckable(True)
+        self.act_guides.setChecked(True)
         self.act_safe = self._action("Zones &sûres (sous-titres)", self.toggle_safe_zones)
         self.act_safe.setCheckable(True)
+        self.act_camera_view = self._action(
+            "Voir à travers la &caméra",
+            self.toggle_camera_view,
+            tip="Décoché : toute la scène est visible et le cadre de la caméra est dessiné par-dessus",
+        )
+        self.act_camera_view.setCheckable(True)
+        self.act_camera_view.setChecked(True)
         self.act_reset_layout = self._action("Réinitialiser la disposition", self.reset_layout)
         self.act_about = self._action("À &propos d'ANTARES Studio", lambda: AboutDialog(self).exec())
         self.act_diag = self._action("&Diagnostics…", self.show_diagnostics)
+        self.act_incident = self._action(
+            "Créer un &rapport d'incident…",
+            lambda _c=False: self.create_incident_report(),
+            tip="Fichier .zip lisible à joindre à une demande d'aide ; rien n'est envoyé automatiquement",
+        )
         self.act_ffmpeg = self._action("Chemin de &FFmpeg…", self.configure_ffmpeg)
         self.act_help = self._action(
             "&Centre d'aide",
@@ -310,6 +419,11 @@ class MainWindow(QMainWindow):
             "Rechercher une &commande…", self.show_command_palette, "Ctrl+K", "Toutes les commandes"
         )
         self.act_welcome = self._action("&Accueil…", self.show_welcome)
+        self.act_reset_tips = self._action(
+            "Réafficher les a&stuces",
+            self.reset_tips,
+            tip="Chaque panneau montrera de nouveau son astuce la prochaine fois que vous y travaillerez",
+        )
         self.act_shortcuts = self._action("&Raccourcis clavier", lambda: self.show_help("raccourcis"))
         self.theme_group = QActionGroup(self)
         self.theme_actions: dict[str, QAction] = {}
@@ -333,6 +447,9 @@ class MainWindow(QMainWindow):
             self.act_frame_next,
             self.act_go_start,
             self.act_go_end,
+            self.act_add_marker,
+            self.act_prev_marker,
+            self.act_next_marker,
         ):
             act.setShortcutContext(Qt.ShortcutContext.WindowShortcut)
             self.addAction(act)
@@ -343,12 +460,18 @@ class MainWindow(QMainWindow):
         for a in (self.act_new, self.act_open):
             m_file.addAction(a)
         self.menu_recent = m_file.addMenu("Projets &récents")
+        self.menu_examples = m_file.addMenu("E&xemples")
+        for eid, ex in EXAMPLES.items():
+            act = self.menu_examples.addAction(ex.title)
+            act.setStatusTip(ex.summary)
+            act.triggered.connect(lambda _c=False, e=eid: self.open_example(e))
         self._fill_recent()
         m_file.addSeparator()
         for a in (self.act_save, self.act_save_as):
             m_file.addAction(a)
         m_file.addSeparator()
-        m_file.addAction(self.act_export)
+        for a in (self.act_export, self.act_quick_preview, self.act_export_png):
+            m_file.addAction(a)
         m_file.addAction(self.act_inventory)
         m_file.addSeparator()
         m_file.addAction(self.act_quit)
@@ -356,11 +479,23 @@ class MainWindow(QMainWindow):
         for a in (self.act_undo, self.act_redo):
             m_edit.addAction(a)
         m_edit.addSeparator()
+        for a in (self.act_cut, self.act_copy, self.act_paste):
+            m_edit.addAction(a)
+        m_edit.addSeparator()
         for a in (self.act_select_all, self.act_duplicate, self.act_delete):
             m_edit.addAction(a)
         m_edit.addSeparator()
         for a in (self.act_group, self.act_ungroup):
             m_edit.addAction(a)
+        m_align = m_edit.addMenu("&Aligner et répartir")
+        for mode in ("left", "hcenter", "right"):
+            m_align.addAction(self.align_actions[mode])
+        m_align.addSeparator()
+        for mode in ("top", "vcenter", "bottom"):
+            m_align.addAction(self.align_actions[mode])
+        m_align.addSeparator()
+        m_align.addAction(self.act_distribute_h)
+        m_align.addAction(self.act_distribute_v)
         m_edit.addSeparator()
         m_edit.addAction(self.act_palette)
         m_add = mb.addMenu("&Objet")
@@ -377,6 +512,7 @@ class MainWindow(QMainWindow):
             "callout",
             "image",
             "group",
+            "camera",
         ):
             spec = spec_for(kind)
             m_add.addAction(self._action(spec.label, lambda _c=False, k=kind: self.add_node_of_kind(k)))
@@ -385,6 +521,9 @@ class MainWindow(QMainWindow):
         m_add.addAction(self._action("Importer une &image…", self.import_image, "Ctrl+I"))
         m_add.addAction(self._action("Importer des &données (CSV) en graphique…", self.import_data))
         m_add.addAction(self._action("&Planète 3D (Blender, facultatif)…", self.add_blender_planet))
+        m_add.addAction(self._action("Importer un &modèle 3D (glTF, .glb)…", self.import_model))
+        m_add.addSeparator()
+        m_add.addAction(self.act_units)
         m_anim = mb.addMenu("&Animation")
         from antares_studio.timeline.presets import PRESETS
 
@@ -400,6 +539,9 @@ class MainWindow(QMainWindow):
             self.act_frame_prev,
             self.act_frame_next,
         ):
+            m_anim.addAction(a)
+        m_anim.addSeparator()
+        for a in (self.act_add_marker, self.act_prev_marker, self.act_next_marker):
             m_anim.addAction(a)
         m_narr = mb.addMenu("&Narration")
         m_narr.addAction(self._action("Importer une &narration audio…", self.narration.audio.import_audio))
@@ -418,7 +560,7 @@ class MainWindow(QMainWindow):
         for a in (self.act_zoom_in, self.act_zoom_out, self.act_zoom_fit):
             m_view.addAction(a)
         m_view.addSeparator()
-        for a in (self.act_grid, self.act_snap, self.act_safe):
+        for a in (self.act_grid, self.act_snap, self.act_guides, self.act_safe, self.act_camera_view):
             m_view.addAction(a)
         m_view.addSeparator()
         for dock in self._all_docks():
@@ -435,10 +577,11 @@ class MainWindow(QMainWindow):
         m_help.addAction(self.act_help)
         self.menu_tutorials = m_help.addMenu("&Tutoriels")
         self._fill_tutorials_menu()
-        for a in (self.act_shortcuts, self.act_whats_this, self.act_welcome):
+        for a in (self.act_shortcuts, self.act_whats_this, self.act_welcome, self.act_reset_tips):
             m_help.addAction(a)
         m_help.addSeparator()
         m_help.addAction(self.act_diag)
+        m_help.addAction(self.act_incident)
         m_help.addAction(self.act_ffmpeg)
         m_help.addSeparator()
         m_help.addAction(self.act_about)
@@ -514,8 +657,12 @@ class MainWindow(QMainWindow):
         self.act_redo.setEnabled(d.undo.can_redo)
         self.act_redo.setText(f"&Rétablir {d.undo.redo_label}" if d.undo.can_redo else "&Rétablir")
         has_sel = bool(d.selection)
-        for a in (self.act_delete, self.act_duplicate, self.act_group):
+        for a in (self.act_delete, self.act_duplicate, self.act_group, self.act_copy, self.act_cut):
             a.setEnabled(has_sel)
+        for a in self.align_actions.values():
+            a.setEnabled(has_sel)
+        for a in (self.act_distribute_h, self.act_distribute_v):
+            a.setEnabled(len(d.selection) >= 3)
         self.act_ungroup.setEnabled(any(n.kind == "group" for n in d.selected_nodes))
         n = len(d.selection)
         self.status_sel.setText(
@@ -547,6 +694,8 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.timeline_dock)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.narration_dock)
         self.tabifyDockWidget(self.timeline_dock, self.narration_dock)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.exports_dock)
+        self.tabifyDockWidget(self.narration_dock, self.exports_dock)
         self.timeline_dock.raise_()
         self.resize(1400, 860)
         self.canvas.fit_to_view()
@@ -557,6 +706,52 @@ class MainWindow(QMainWindow):
 
     def toggle_snap(self, on: bool) -> None:
         self.canvas.snap_to_grid = on
+
+    def toggle_guides(self, on: bool) -> None:
+        self.canvas.smart_guides = on
+
+    def toggle_camera_view(self, on: bool) -> None:
+        self.document.preview_camera = on
+        self.canvas.update()
+        self.inspector.refresh_values()
+
+    # --- repères --------------------------------------------------------------------
+    def add_marker(self, label: str | None = None) -> Marker | None:
+        scene = self.document.scene
+        if scene is None:
+            return None
+        frame = self.document.frame
+        existing = next((m for m in scene.markers if m.frame == frame), None)
+        if existing is not None:
+            self.statusBar().showMessage(f"Un repère existe déjà ici : « {existing.label} ».", 4000)
+            return existing
+        if label is None:
+            label = f"Repère {len(scene.markers) + 1}"
+        marker = Marker.create(frame, label)
+        self.document.push(AddMarker(scene.id, marker))
+        self.statusBar().showMessage(
+            f"Repère « {label} » ajouté. Double-clic dessus dans la règle de la Timeline pour le renommer.",
+            5000,
+        )
+        return marker
+
+    def jump_marker(self, direction: int) -> bool:
+        """Place la tête de lecture sur le repère précédent (-1) ou suivant (+1)."""
+        scene = self.document.scene
+        if scene is None:
+            return False
+        frames = sorted({m.frame for m in scene.markers})
+        f = self.document.frame
+        target = (
+            next((x for x in frames if x > f), None)
+            if direction > 0
+            else next((x for x in reversed(frames) if x < f), None)
+        )
+        if target is None:
+            return False
+        self.timeline.pause()
+        self.document.set_frame(target)
+        return True
 
     def toggle_safe_zones(self, on: bool) -> None:
         self.canvas.show_safe_zones = on
@@ -575,6 +770,7 @@ class MainWindow(QMainWindow):
         self.narration.document = document
         self.narration.audio.document = document
         self.narration.subtitles.document = document
+        document.preview_camera = self.act_camera_view.isChecked()
         self.act_undo.triggered.disconnect()
         self.act_redo.triggered.disconnect()
         self.act_undo.triggered.connect(document.undo.undo)
@@ -608,6 +804,7 @@ class MainWindow(QMainWindow):
         document.frameChanged.connect(lambda _f: tv.update())
         document.frameChanged.connect(self.timeline._on_frame)
         document.changed.connect(self.timeline._update_scroll)
+        document.changed.connect(self.timeline._sync_easing)
         document.sceneChanged.connect(lambda _s: self.timeline._update_scroll())
         document.changed.connect(self.timeline.load_waveforms)
         document.sceneChanged.connect(lambda _s: self.timeline.load_waveforms())
@@ -804,17 +1001,91 @@ class MainWindow(QMainWindow):
 
     def export_video(self) -> None:
         self.timeline.pause()
-        dlg = ExportDialog(self.document, self.settings, self)
+        dlg = ExportDialog(self.document, self.settings, self, queue=self.export_queue)
         dlg.exec()
+        if dlg.queued_job is not None:
+            self.show_exports()
         if dlg.render_result is not None:
-            self.ui_counters["exports"] += 1
-            if isinstance(dlg.render_result, ProjectRenderResult):
-                self.ui_counters["full_exports"] += 1
+            self._count_export(dlg.render_result)
+
+    def _count_export(self, result: object) -> None:
+        self.ui_counters["exports"] += 1
+        if isinstance(result, ProjectRenderResult):
+            self.ui_counters["full_exports"] += 1
+
+    def _export_job_finished(self, job: ExportJob) -> None:
+        self._count_export(job.result)
+        self.statusBar().showMessage(f"Export terminé : {job.output_path}", 8000)
+
+    def show_exports(self) -> None:
+        self.exports_dock.show()
+        self.exports_dock.raise_()
+
+    def quick_preview(self) -> ExportJob | None:
+        """Rend la scène courante en 360p en arrière-plan, puis l'ouvre dans le lecteur du système."""
+        scene = self.document.scene
+        if scene is None:
+            return None
+        folder = self.document.paths.renders if self.document.paths else Path(tempfile.gettempdir())
+        out = folder / f"Aperçu - {scene.name.replace('/', '-').replace(chr(92), '-')}.mp4"
+        try:
+            audio = audio_plans_for_scene(self.document.project, scene.id, self.document.resolve_asset)
+            plan = build_render_plan(self.document.project, scene.id, "preview_360p", str(out), audio=audio)
+        except (RenderError, ValueError) as exc:
+            QMessageBox.warning(self, "Aperçu rapide", str(exc))
+            return None
+        if ff.find_ffmpeg(self.settings.ffmpeg_path() or None) is None:
+            QMessageBox.warning(
+                self,
+                "Aperçu rapide",
+                "FFmpeg est introuvable : indiquez son emplacement (Aide > Chemin de FFmpeg…).",
+            )
+            return None
+        job = ExportJob.from_document(
+            self.document, out.name, out, plan, ffmpeg_path=self.settings.ffmpeg_path(), open_when_done=True
+        )
+        self.export_queue.submit(job)
+        self.show_exports()
+        return job
+
+    def export_still(self, path: str | None = None) -> Path | None:
+        """Enregistre l'image courante en PNG, à la résolution du projet (caméra et transition comprises)."""
+        scene = self.document.scene
+        if scene is None:
+            return None
+        if path is None:
+            folder = (
+                self.document.paths.renders if self.document.paths else Path(self.settings.last_directory())
+            )
+            default = folder / f"{scene.name} - image {self.document.frame}.png"
+            path, _ = QFileDialog.getSaveFileName(self, "Exporter l'image", str(default), "Image PNG (*.png)")
+            if not path:
+                return None
+        target = Path(path if path.lower().endswith(".png") else path + ".png")
+        c = self.document.project.canvas
+        renderer = FrameRenderer(self.document.project, self.document.resolve_asset, ImageCache())
+        image = renderer.render(scene.id, self.document.frame, c.width, c.height)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if not image.save(str(target)):  # format déduit de l'extension .png
+            QMessageBox.warning(self, "Exporter l'image", f"Impossible d'écrire {target}.")
+            return None
+        self.statusBar().showMessage(f"Image enregistrée : {target}", 6000)
+        return target
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if not self.maybe_save():
             event.ignore()
             return
+        if self.export_queue.pending():
+            answer = QMessageBox.question(
+                self,
+                "Exports en cours",
+                f"{len(self.export_queue.pending())} export(s) non terminé(s). Les annuler et quitter ?",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                event.ignore()
+                return
+        self.export_queue.wait_idle()
         self.timeline.pause()
         self.settings.save_window(self.saveGeometry(), self.saveState())
         super().closeEvent(event)
@@ -825,10 +1096,17 @@ class MainWindow(QMainWindow):
         if scene is None:
             return None
         spec = spec_for(kind)
-        center = at or self.canvas.visible_center_canvas()
         c = self.document.project.canvas
-        x = max(0.0, min(float(c.width), center.x()))
-        y = max(0.0, min(float(c.height), center.y()))
+        if kind == "camera":  # cadre initial = image entière : rien ne change tant qu'on ne l'anime pas
+            at = QPointF(c.width / 2, c.height / 2)
+            if any(n.kind == "camera" for n in scene.nodes):
+                self.statusBar().showMessage(
+                    "Cette scène a déjà une caméra : seule la première caméra visible filme.", 6000
+                )
+        center = at or self.canvas.visible_center_canvas()
+        # arrondi au centième (précision de l'Inspecteur) : pas de 960,0000000000001 selon la taille de la vue
+        x = round(max(0.0, min(float(c.width), center.x())), 2)
+        y = round(max(0.0, min(float(c.height), center.y())), 2)
         count = sum(1 for n in scene.nodes if n.kind == kind) + 1
         node = Node.create(
             kind,
@@ -841,6 +1119,20 @@ class MainWindow(QMainWindow):
             node.params["text"] = "Votre texte"
         self.document.push(AddNode(scene.id, node))
         self.document.set_selection([node.id])
+        return node
+
+    def insert_physical_value(self, dialog: UnitsDialog | None = None) -> Node | None:
+        """« Constantes et unités » : le résultat choisi devient un objet Texte (une seule annulation)."""
+        dlg = dialog or UnitsDialog(self)
+        if dialog is None and not dlg.exec():
+            return None
+        text = dlg.inserted_text
+        if not text or self.document.scene is None:
+            return None
+        with self.document.macro("Insérer une valeur physique"):
+            node = self.add_node_of_kind("text")
+            if node is not None:
+                self.document.set_node_property(node.id, "params.text", text)
         return node
 
     def import_image(self) -> None:
@@ -915,6 +1207,56 @@ class MainWindow(QMainWindow):
                 return
         BlenderPlanetDialog(self.document, self).exec()
 
+    def import_model(self) -> None:
+        """Importe un modèle glTF (.glb) et l'ajoute à la scène, avec sa fiche de provenance."""
+        if self.document.scene is None:
+            return
+        if self.document.paths is None:
+            QMessageBox.information(
+                self,
+                "Importer un modèle 3D",
+                "Enregistrez d'abord le projet : le modèle est copié dans assets/.",
+            )
+            if not self.save_project_as():
+                return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Importer un modèle 3D", self.settings.last_directory(), "Modèles glTF (*.glb *.gltf)"
+        )
+        if not path:
+            return
+        node = self.add_model_from_file(Path(path))
+        if node is not None:
+            asset = self.document.project.asset(str(node.params["model_asset_id"]))
+            if asset is not None:
+                edit_asset_provenance(self.document, asset, self)
+
+    def add_model_from_file(self, path: Path) -> Node | None:
+        from antares_studio.rendering.gltf import load_mesh
+        from antares_studio.resources.assets import import_asset
+
+        scene = self.document.scene
+        if scene is None:
+            return None
+        try:
+            asset = import_asset(self.document, path, kind="model")
+            mesh = load_mesh(self.document.paths.root / asset.path if self.document.paths else path)
+        except (OSError, ValueError) as exc:
+            QMessageBox.critical(self, "Import impossible", str(exc))
+            return None
+        with self.document.macro("Importer un modèle 3D"):
+            node = self.add_node_of_kind("model3d")
+            if node is not None:
+                self.document.push(
+                    SetProperties(
+                        scene.id, node.id, {"params.model_asset_id": asset.id, "name": f"Modèle {path.stem}"}
+                    )
+                )
+        message = f"Modèle 3D : {mesh.triangle_count} triangles"
+        if mesh.notes:
+            message += " — " + " ; ".join(mesh.notes)
+        self.statusBar().showMessage(message, 8000)
+        return node
+
     def add_chart_from_csv(self, path: Path) -> Node | None:
         from antares_studio.resources.assets import import_asset
         from antares_studio.science.data import load_csv
@@ -978,32 +1320,195 @@ class MainWindow(QMainWindow):
         scene = self.document.scene
         if scene is None:
             return
-        for nid in self.document.selection:
-            if scene.find_node(nid) is not None:
-                self.document.push(RemoveNode(scene.id, nid))
-        self.document.set_selection([])
+        with self.document.macro("Supprimer la sélection"):
+            for nid in self.document.selection:
+                if scene.find_node(nid) is not None:
+                    self.document.push(RemoveNode(scene.id, nid))
+            self.document.set_selection([])
 
     def duplicate_selection(self) -> None:
         scene = self.document.scene
         if scene is None:
             return
-        new_ids = []
-        for nid in self.document.selection:
-            node = scene.find_node(nid)
-            if node is None:
+        with self.document.macro("Dupliquer"):
+            new_ids = []
+            for nid in self.document.selection:
+                node = scene.find_node(nid)
+                if node is None:
+                    continue
+                clone = copy.deepcopy(node)
+                clone.id = new_id("node")
+                clone.name = node.name + " (copie)"
+                clone.position = [node.position[0] + 20, node.position[1] + 20]
+                self.document.push(AddNode(scene.id, clone))
+                tracks = [copy.deepcopy(t) for t in scene.tracks_for(nid)]
+                for t in tracks:
+                    t.target_id = clone.id
+                if tracks:
+                    self.document.push(
+                        ReplaceTracks(scene.id, clone.id, tracks, label="Dupliquer l'animation")
+                    )
+                new_ids.append(clone.id)
+            self.document.set_selection(new_ids)
+
+    # --- presse-papiers ----------------------------------------------------------
+    def _on_clipboard_changed(self) -> None:
+        self._paste_count = 0
+
+    def copy_selection(self) -> bool:
+        scene = self.document.scene
+        if scene is None or not self.document.selection:
+            return False
+        data = copy_nodes(
+            self.document.project,
+            scene,
+            self.document.selection,
+            str(self.document.root) if self.document.root else None,
+        )
+        mime = QMimeData()
+        mime.setData(CLIPBOARD_MIME, json.dumps(data, ensure_ascii=False).encode("utf-8"))
+        QApplication.clipboard().setMimeData(mime)
+        self._paste_count = 0
+        n = len(data["nodes"])
+        self.statusBar().showMessage(f"{n} objet{'s' if n > 1 else ''} copié{'s' if n > 1 else ''}.", 3000)
+        return True
+
+    def cut_selection(self) -> None:
+        if self.copy_selection():
+            with self.document.macro("Couper"):
+                self.delete_selection()
+
+    def paste(self) -> list[str]:
+        """Colle les objets du presse-papiers dans la scène courante ; retourne les racines collées."""
+        scene = self.document.scene
+        mime = QApplication.clipboard().mimeData()
+        if scene is None or mime is None or not mime.hasFormat(CLIPBOARD_MIME):
+            self.statusBar().showMessage("Le presse-papiers ne contient pas d'objets ANTARES Studio.", 4000)
+            return []
+        self._paste_count += 1
+        step = 20.0 * self._paste_count
+        try:
+            raw = json.loads(bytes(mime.data(CLIPBOARD_MIME).data()).decode("utf-8"))
+            payload = read_payload(raw, self.document.project, offset=(step, step))
+        except (ValueError, UnicodeDecodeError) as exc:
+            QMessageBox.warning(self, "Coller", f"Collage impossible : {exc}")
+            return []
+        warnings = list(payload.warnings)
+        remap_assets(payload, self._paste_assets(payload, warnings))
+        with self.document.macro("Coller"):
+            for node in payload.nodes:
+                self.document.push(AddNode(scene.id, node))
+            for node in payload.nodes:
+                tracks = [t for t in payload.tracks if t.target_id == node.id]
+                if tracks:
+                    self.document.push(ReplaceTracks(scene.id, node.id, tracks, label="Coller l'animation"))
+        roots = [n.id for n in payload.nodes if n.parent_id is None]
+        self.document.set_selection(roots)
+        n = len(payload.nodes)
+        msg = f"{n} objet{'s' if n > 1 else ''} collé{'s' if n > 1 else ''}."
+        self.statusBar().showMessage(msg + (" " + " ; ".join(warnings) if warnings else ""), 8000)
+        return roots
+
+    def _paste_assets(self, payload: PastePayload, warnings: list[str]) -> dict[str, str]:
+        """Ressources d'un autre projet : réutilise un fichier identique, sinon le recopie dans celui-ci."""
+        from antares_studio.persistence.paths import UnsafePathError, resolve_under
+        from antares_studio.resources.assets import import_asset
+
+        project = self.document.project
+        mapping: dict[str, str] = {}
+        for asset in payload.assets:
+            mine = project.asset(asset.id)
+            if mine is not None and (payload.same_project or mine.sha256 == asset.sha256):
                 continue
-            clone = copy.deepcopy(node)
-            clone.id = new_id("node")
-            clone.name = node.name + " (copie)"
-            clone.position = [node.position[0] + 20, node.position[1] + 20]
-            self.document.push(AddNode(scene.id, clone))
-            tracks = [copy.deepcopy(t) for t in scene.tracks_for(nid)]
-            for t in tracks:
-                t.target_id = clone.id
-            if tracks:
-                self.document.push(ReplaceTracks(scene.id, clone.id, tracks, label="Dupliquer l'animation"))
-            new_ids.append(clone.id)
-        self.document.set_selection(new_ids)
+            twin = next((a for a in project.assets if asset.sha256 and a.sha256 == asset.sha256), None)
+            if twin is not None:
+                mapping[asset.id] = twin.id
+                continue
+            source = None
+            if payload.root_path and asset.kind in ("image", "data", "audio"):
+                try:
+                    source = resolve_under(Path(payload.root_path), asset.path)
+                except UnsafePathError:
+                    source = None
+            if source is None or not source.is_file():
+                mapping[asset.id] = ""
+                warnings.append(f"ressource introuvable, référence retirée : {asset.path}")
+                continue
+            if self.document.paths is None:
+                QMessageBox.information(
+                    self, "Coller", "Enregistrez d'abord le projet : les ressources collées y seront copiées."
+                )
+                if not self.save_project_as():
+                    mapping[asset.id] = ""
+                    warnings.append(f"projet non enregistré, ressource non copiée : {asset.path}")
+                    continue
+            try:
+                new = import_asset(self.document, source, kind=asset.kind)
+            except (OSError, ValueError) as exc:
+                mapping[asset.id] = ""
+                warnings.append(f"copie impossible de {asset.path} : {exc}")
+                continue
+            mapping[asset.id] = new.id
+            if asset.license != new.license:
+                self.document.push(SetAssetLicense(new.id, copy.deepcopy(asset.license)))
+        return mapping
+
+    # --- aligner et répartir ------------------------------------------------------
+    def _movable_rects(self) -> list[tuple[Node, tuple[float, float, float, float]]]:
+        """Objets sélectionnés déplaçables (non verrouillés, sans ancêtre aussi sélectionné) et leur boîte."""
+        scene = self.document.scene
+        state = self.document.state()
+        if scene is None or state is None:
+            return []
+        sel = set(self.document.selection)
+        out = []
+        for node in self.document.selected_nodes:
+            if node.locked:
+                continue
+            parent, nested = node.parent_id, False
+            while parent is not None:
+                if parent in sel:
+                    nested = True
+                    break
+                p = scene.find_node(parent)
+                parent = p.parent_id if p else None
+            if not nested:
+                out.append((node, self.canvas.node_rect(state.node(node.id))))
+        return out
+
+    def _move_by(self, items: list[tuple[Node, tuple[float, float]]], label: str) -> None:
+        state = self.document.state()
+        if state is None:
+            return
+        with self.document.macro(label):
+            for node, (dx, dy) in items:
+                if abs(dx) < 1e-9 and abs(dy) < 1e-9:
+                    continue
+                local = self.canvas._parent_inverse_linear(node.id).map(QPointF(dx, dy))
+                st = state.node(node.id)
+                self.document.set_node_properties(
+                    node.id,
+                    {"position.x": st.position[0] + local.x(), "position.y": st.position[1] + local.y()},
+                )
+
+    def align_selection(self, mode: str) -> None:
+        """Aligne la sélection sur sa boîte englobante ; un objet seul s'aligne sur le canevas."""
+        items = self._movable_rects()
+        if not items:
+            return
+        c = self.document.project.canvas
+        ref = (0.0, 0.0, float(c.width), float(c.height)) if len(items) == 1 else None
+        deltas = align_deltas([r for _n, r in items], mode, ref)
+        self._move_by([(n, d) for (n, _r), d in zip(items, deltas, strict=True)], ALIGN_MODES[mode])
+
+    def distribute_selection(self, axis: str) -> None:
+        items = self._movable_rects()
+        if len(items) < 3:
+            self.statusBar().showMessage("Répartir : sélectionnez au moins trois objets.", 4000)
+            return
+        deltas = distribute_deltas([r for _n, r in items], axis)
+        label = "Répartir horizontalement" if axis == "x" else "Répartir verticalement"
+        self._move_by([(n, d) for (n, _r), d in zip(items, deltas, strict=True)], label)
 
     def select_all(self) -> None:
         scene = self.document.scene
@@ -1015,47 +1520,49 @@ class MainWindow(QMainWindow):
         sel = self.document.selected_nodes
         if scene is None or not sel:
             return
-        xs = [n.position[0] for n in sel]
-        ys = [n.position[1] for n in sel]
-        gx, gy = sum(xs) / len(xs), sum(ys) / len(ys)
-        group = Node.create("group", "Groupe", position=[gx, gy])
-        self.document.push(AddNode(scene.id, group, index=min(scene.nodes.index(n) for n in sel)))
-        for n in sel:
-            if n.parent_id is None:
-                self.document.push(
-                    SetProperties(
-                        scene.id,
-                        n.id,
-                        {
-                            "parent_id": group.id,
-                            "position.x": n.position[0] - gx,
-                            "position.y": n.position[1] - gy,
-                        },
-                        label="Grouper",
+        with self.document.macro("Grouper"):
+            xs = [n.position[0] for n in sel]
+            ys = [n.position[1] for n in sel]
+            gx, gy = sum(xs) / len(xs), sum(ys) / len(ys)
+            group = Node.create("group", "Groupe", position=[gx, gy])
+            self.document.push(AddNode(scene.id, group, index=min(scene.nodes.index(n) for n in sel)))
+            for n in sel:
+                if n.parent_id is None:
+                    self.document.push(
+                        SetProperties(
+                            scene.id,
+                            n.id,
+                            {
+                                "parent_id": group.id,
+                                "position.x": n.position[0] - gx,
+                                "position.y": n.position[1] - gy,
+                            },
+                            label="Grouper",
+                        )
                     )
-                )
-        self.document.set_selection([group.id])
+            self.document.set_selection([group.id])
 
     def ungroup_selection(self) -> None:
         scene = self.document.scene
         if scene is None:
             return
-        for g in [n for n in self.document.selected_nodes if n.kind == "group"]:
-            for child in scene.children_of(g.id):
-                self.document.push(
-                    SetProperties(
-                        scene.id,
-                        child.id,
-                        {
-                            "parent_id": g.parent_id,
-                            "position.x": child.position[0] + g.position[0],
-                            "position.y": child.position[1] + g.position[1],
-                        },
-                        label="Dégrouper",
+        with self.document.macro("Dégrouper"):
+            for g in [n for n in self.document.selected_nodes if n.kind == "group"]:
+                for child in scene.children_of(g.id):
+                    self.document.push(
+                        SetProperties(
+                            scene.id,
+                            child.id,
+                            {
+                                "parent_id": g.parent_id,
+                                "position.x": child.position[0] + g.position[0],
+                                "position.y": child.position[1] + g.position[1],
+                            },
+                            label="Dégrouper",
+                        )
                     )
-                )
-            self.document.push(RemoveNode(scene.id, g.id))
-        self.document.set_selection([])
+                self.document.push(RemoveNode(scene.id, g.id))
+            self.document.set_selection([])
 
     def _edit_text_inline(self, node_id: str) -> None:
         scene = self.document.scene
@@ -1085,19 +1592,39 @@ class MainWindow(QMainWindow):
         dlg = PresetDialog(preset_id, self.document, sel[0], self)
         if dlg.exec() != PresetDialog.DialogCode.Accepted:
             return
-        params = dlg.values()
-        for node in sel:
+        self.apply_preset_values(preset_id, dlg.values())
+
+    def apply_preset_values(self, preset_id: str, params: dict[str, object]) -> list[str]:
+        """Pose le preset sur la sélection ; les objets qu'il ne concerne pas (« Tracer la courbe » sur un
+        cercle, « Transformer la formule » sur un texte…) sont laissés intacts et signalés."""
+        from antares_studio.domain.kinds import animatable_properties
+        from antares_studio.timeline.presets import PRESETS
+
+        scene = self.document.scene
+        skipped: list[str] = []
+        if scene is None:
+            return skipped
+        for node in self.document.selected_nodes:
             try:
                 tracks = apply_preset(preset_id, node, params)
             except ValueError as exc:
                 QMessageBox.warning(self, "Animation", str(exc))
-                return
+                return skipped
+            allowed = set(animatable_properties(node.kind))
+            if any(t.property not in allowed for t in tracks):
+                skipped.append(node.name)
+                continue
             existing = [
                 t for t in scene.tracks_for(node.id) if t.property not in {t2.property for t2 in tracks}
             ]
             self.document.push(
                 ReplaceTracks(scene.id, node.id, existing + tracks, label=f"Animation : {preset_id}")
             )
+        if skipped:
+            self.statusBar().showMessage(
+                f"« {PRESETS[preset_id].label} » ne s'applique pas à : {', '.join(skipped)}", 8000
+            )
+        return skipped
 
     def add_template_scene(self, template_id: str) -> None:
         if template_id not in TEMPLATES:
@@ -1113,6 +1640,8 @@ class MainWindow(QMainWindow):
     def _apply_icons(self) -> None:
         for name, icon_name in ACTION_ICONS.items():
             getattr(self, name).setIcon(icons.icon(icon_name))
+        for mode, icon_name in ALIGN_ICONS.items():
+            self.align_actions[mode].setIcon(icons.icon(icon_name))
         self.menu_tutorials.menuAction().setIcon(icons.icon("graduation-cap"))
         self.timeline.restyle()
         self.library.refresh_icons()
@@ -1237,6 +1766,8 @@ class MainWindow(QMainWindow):
             self._open_recent(Path(arg))
         elif kind == "template":
             self.new_project_from_template(arg)
+        elif kind == "example":
+            self.open_example(arg)
         elif kind == "tutorial":
             self.start_tutorial(arg)
         elif kind == "help":
@@ -1249,6 +1780,18 @@ class MainWindow(QMainWindow):
         title = TEMPLATES[template_id][0].split(" (")[0]
         self._set_document(ProjectDocument(create_project(title, Canvas(), template_id, 20)))
         self.statusBar().showMessage(f"Projet « {title} » créé. Pensez à l'enregistrer (Ctrl+S).", 6000)
+        return True
+
+    def open_example(self, example_id: str) -> bool:
+        """Ouvre un projet d'exemple complet (non enregistré) ; aucune voix : seulement les sous-titres."""
+        if example_id not in EXAMPLES or not self.maybe_save():
+            return False
+        self._set_document(ProjectDocument(build_example(example_id)))
+        self.statusBar().showMessage(
+            f"Exemple « {EXAMPLES[example_id].title} » ouvert : sous-titres sans voix. "
+            "Enregistrez-le (Ctrl+S) pour le modifier à votre guise.",
+            8000,
+        )
         return True
 
     # --- tutoriels ----------------------------------------------------------------
@@ -1285,6 +1828,10 @@ class MainWindow(QMainWindow):
                 **self.ui_counters,
             },
         )
+
+    def reset_tips(self) -> None:
+        self.settings.reset_tips()
+        self.statusBar().showMessage("Astuces réactivées : elles réapparaîtront panneau par panneau.", 5000)
 
     def start_tutorial(self, tutorial_id: str) -> bool:
         tut = TUTORIALS_BY_ID.get(tutorial_id)
@@ -1378,6 +1925,33 @@ class MainWindow(QMainWindow):
             return None
         self.reveal_widget(target)
         return Highlighter(target, self)
+
+    def create_incident_report(self, path: str | None = None) -> Path | None:
+        """Écrit le rapport d'incident (.zip) à l'endroit choisi et montre son contenu."""
+        from datetime import datetime
+
+        from antares_studio.app.incident import write_incident_report
+
+        if path is None:
+            default = (
+                Path(self.settings.last_directory()) / f"rapport-antares-{datetime.now():%Y%m%d-%H%M}.zip"
+            )
+            path, _ = QFileDialog.getSaveFileName(
+                self, "Créer un rapport d'incident", str(default), "Archive ZIP (*.zip)"
+            )
+            if not path:
+                return None
+        target = Path(path if path.lower().endswith(".zip") else path + ".zip")
+        root = self.document.paths.root if self.document.paths else None
+        try:
+            files = write_incident_report(
+                target, diagnostics_report(self.settings.ffmpeg_path()), self.document.project, root
+            )
+        except OSError as exc:
+            QMessageBox.warning(self, "Rapport d'incident", f"Impossible d'écrire le rapport : {exc}")
+            return None
+        self.statusBar().showMessage(f"Rapport d'incident créé : {target} ({', '.join(files)})", 10000)
+        return target
 
     def show_diagnostics(self) -> None:
         DiagnosticsDialog(diagnostics_report(self.settings.ffmpeg_path()), self).exec()

@@ -26,6 +26,8 @@ KIND_ICONS: dict[str, str] = {
     "image": "image",
     "image_sequence": "box",
     "group": "group",
+    "camera": "video",
+    "model3d": "rotate-3d",
 }
 PRESET_ICONS: dict[str, str] = {
     "appear": "eye",
@@ -36,6 +38,7 @@ PRESET_ICONS: dict[str, str] = {
     "orbit": "orbit",
     "trace": "chart-spline",
     "kepler": "orbit",
+    "morph": "blend",
 }
 _kind_cache: dict[tuple[str, int, str], QIcon] = {}
 _template_cache: dict[tuple[str, int, int], QPixmap] = {}

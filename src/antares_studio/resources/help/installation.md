@@ -8,11 +8,13 @@
 | **FFmpeg** | pour exporter la vidéo et lire les sons | encodage MP4, lecture des fichiers audio, formes d'onde |
 | Blender | non | uniquement pour la [planète 3D](planete-3d.md) |
 
+Sous Windows, l'**installateur** `ANTARES-Studio-…-setup.exe` installe ANTARES pour votre compte seulement, **sans droits d'administrateur**, crée un raccourci dans le menu Démarrer (et sur le bureau si vous le cochez) et se désinstalle depuis *Paramètres > Applications*. Il n'est **pas encore signé** : Windows SmartScreen peut afficher « Windows a protégé votre ordinateur » ; cliquez sur *Informations complémentaires* puis *Exécuter quand même* si vous l'avez obtenu d'une source sûre.
+
 La version Windows préparée avec PyInstaller peut contenir FFmpeg dans son sous-dossier `bin`. Sinon, installez FFmpeg depuis https://ffmpeg.org (rubrique *Download*) et ajoutez-le au `PATH`, ou indiquez son emplacement à ANTARES.
 
 ## Vérifier l'installation
 
-**Aide > Diagnostics…** affiche la version d'ANTARES, du système, de Python et de Qt ; il indique si FFmpeg (avec son encodeur H.264), FFprobe et Blender sont trouvés. Joignez ce texte à tout signalement de problème.
+**Aide > Diagnostics…** affiche la version d'ANTARES, du système, de Python et de Qt ; il indique si FFmpeg (avec ses encodeurs H.264, VP9, Opus et GIF), FFprobe et Blender sont trouvés. Joignez ce texte à tout signalement de problème.
 
 Si FFmpeg n'est pas trouvé :
 

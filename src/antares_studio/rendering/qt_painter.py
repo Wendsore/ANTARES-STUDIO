@@ -11,6 +11,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import (
     QBrush,
@@ -28,7 +29,8 @@ from PySide6.QtGui import (
 from antares_studio.domain.colors import is_color, parse_color
 from antares_studio.domain.model import DEFAULT_SUBTITLE_STYLE, Canvas
 from antares_studio.rendering.formula_layout import formula_rect, paint_formula
-from antares_studio.science.data import DataError, DataTable, load_csv, nice_ticks
+from antares_studio.rendering.gltf import GltfError, Mesh, load_mesh, project
+from antares_studio.science.data import DataError, DataTable, histogram, load_csv, nice_ticks
 from antares_studio.timeline.evaluator import NodeState, SceneState
 
 AssetResolver = Callable[[str], Path | None]
@@ -49,6 +51,7 @@ class ImageCache:
     def __init__(self, limit: int = 600):
         self._items: dict[str, QImage] = {}
         self._tables: dict[str, DataTable | None] = {}
+        self._meshes: dict[str, Mesh | None] = {}
         self._limit = limit
 
     def get(self, path: Path) -> QImage | None:
@@ -80,9 +83,25 @@ class ImageCache:
         self._tables[key] = table
         return table
 
+    def get_mesh(self, path: Path) -> Mesh | None:
+        """Modèle 3D (triangles) mis en cache ; ``None`` si absent ou illisible."""
+        key = str(path)
+        if key in self._meshes:
+            return self._meshes[key]
+        mesh: Mesh | None
+        try:
+            mesh = load_mesh(path) if path.is_file() else None
+        except (GltfError, OSError):
+            mesh = None
+        if len(self._meshes) >= self._limit:
+            self._meshes.pop(next(iter(self._meshes)))
+        self._meshes[key] = mesh
+        return mesh
+
     def clear(self) -> None:
         self._items.clear()
         self._tables.clear()
+        self._meshes.clear()
 
 
 def paint_scene_state(
@@ -489,27 +508,49 @@ def _draw_chart(painter: QPainter, node: NodeState, assets: AssetResolver | None
     painter.setFont(font)
     fm = QFontMetricsF(font)
     x_name, y_name = str(p.get("x_column", "")), str(p.get("y_column", ""))
-    points = table.xy(x_name, y_name) if table is not None else []
+    chart_type = str(p.get("chart_type", "line"))
+    cx_col = table.column(x_name) if table is not None else None
+    bars: list[tuple[float, float, float]] = []  # (gauche, droite, hauteur) en unités des données
+    if chart_type == "histogram":
+        classes = histogram(list(cx_col.values), int(p.get("bins", 10))) if cx_col is not None else []
+        bars = [(b.left, b.right, float(b.count)) for b in classes]
+        points = [((a + b) / 2, h) for a, b, h in bars]
+        x_label, y_label = (cx_col.label if cx_col else x_name), "Effectif"
+    else:
+        points = table.xy(x_name, y_name) if table is not None else []
+        cy_col = table.column(y_name) if table is not None else None
+        x_label = cx_col.label if cx_col else x_name
+        y_label = cy_col.label if cy_col else y_name
+        if chart_type == "bars" and points:
+            distinct = sorted({x for x, _y in points})
+            gaps = [b - a for a, b in zip(distinct, distinct[1:], strict=False)]
+            half = 0.4 * (min(gaps) if gaps else 1.0)
+            bars = [(x - half, x + half, y) for x, y in points]
     if table is None or not points:
         # données absentes ou colonnes inconnues : cadre explicite, jamais de crash
         painter.setPen(QPen(QColor("#FF5555"), 3, Qt.PenStyle.DashLine))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRect(frame)
         painter.setPen(QPen(axis_color))
-        msg = "Données CSV absentes" if table is None else f"Colonnes introuvables : {x_name!r}, {y_name!r}"
+        if table is None:
+            msg = "Données CSV absentes"
+        elif chart_type == "histogram":
+            msg = f"Colonne introuvable : {x_name!r}"
+        else:
+            msg = f"Colonnes introuvables : {x_name!r}, {y_name!r}"
         painter.drawText(frame, int(Qt.AlignmentFlag.AlignCenter), msg)
         return
-    cx_col, cy_col = table.column(x_name), table.column(y_name)
-    assert cx_col is not None and cy_col is not None
     margin_l = fm.horizontalAdvance("-0.000e+00") + fm.height() * 1.4
     margin_b = fm.height() * 2.6
     margin_t = fm.height() * (1.6 if p.get("title") else 0.6)
     plot = QRectF(frame.left() + margin_l, frame.top() + margin_t, frame.width() - margin_l - fm.height(), 0)
     plot.setHeight(frame.height() - margin_t - margin_b)
-    xs = [q[0] for q in points]
-    ys = [q[1] for q in points]
+    xs = [q[0] for q in points] + [v for a, b, _h in bars for v in (a, b)]
+    ys = [q[1] for q in points] + ([0.0] if bars else [])  # les barres partent de zéro
     x0, x1 = _axis_range(xs, float(p.get("x_min", 0.0)), float(p.get("x_max", 0.0)))
     y0, y1 = _axis_range(ys, float(p.get("y_min", 0.0)), float(p.get("y_max", 0.0)))
+    if bars and min(ys) >= 0 and float(p.get("y_min", 0.0)) == 0.0:
+        y0 = 0.0  # pas de marge sous la ligne de base
 
     def to_px(x: float, y: float) -> QPointF:
         return QPointF(
@@ -553,14 +594,14 @@ def _draw_chart(painter: QPainter, node: NodeState, assets: AssetResolver | None
     painter.drawLine(plot.bottomLeft(), plot.topLeft())
     # libellés d'axes avec unités, titre
     painter.setPen(text_pen)
-    xl = cx_col.label
+    xl = x_label
     painter.drawText(
         QPointF(plot.center().x() - fm.horizontalAdvance(xl) / 2, frame.bottom() - fm.descent() - 2), xl
     )
     painter.save()
     painter.translate(frame.left() + fm.ascent() + 2, plot.center().y())
     painter.rotate(-90)
-    yl = cy_col.label
+    yl = y_label
     painter.drawText(QPointF(-fm.horizontalAdvance(yl) / 2, 0), yl)
     painter.restore()
     title = str(p.get("title", ""))
@@ -568,8 +609,23 @@ def _draw_chart(painter: QPainter, node: NodeState, assets: AssetResolver | None
         painter.drawText(
             QPointF(plot.center().x() - fm.horizontalAdvance(title) / 2, frame.top() + fm.ascent() + 4), title
         )
-    # courbe (progression : fraction des points tracés, interpolation du dernier segment)
     progress = max(0.0, min(1.0, float(p.get("progress", 1.0))))
+    color = qcolor(node.style.get("stroke", "#4FC3F7"))
+    if bars:
+        # barres : elles montent l'une après l'autre au fil de la progression
+        painter.setClipRect(plot.adjusted(-2, -2, 2, 2))
+        painter.setPen(QPen(qcolor(node.style.get("fill", "#0B102080")), 1))
+        painter.setBrush(QBrush(color))
+        base = min(max(0.0, y0), y1)
+        for i, (left, right, height) in enumerate(bars):
+            grow = max(0.0, min(1.0, progress * len(bars) - i))
+            if grow <= 0:
+                continue
+            top = base + (height - base) * grow
+            painter.drawRect(QRectF(to_px(left, max(top, base)), to_px(right, min(top, base))))
+        painter.setClipping(False)
+        return
+    # courbe (progression : fraction des points tracés, interpolation du dernier segment)
     n = len(points)
     reach = progress * (n - 1)
     k = int(math.floor(reach))
@@ -639,6 +695,35 @@ def _draw_image_sequence(
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
 
 
+def _draw_model3d(
+    painter: QPainter, node: NodeState, assets: AssetResolver | None, cache: ImageCache
+) -> None:
+    """Modèle glTF en projection orthographique, faces ombrées (Lambert) triées du fond vers l'avant."""
+    p = node.params
+    size = float(p.get("size", 400.0))
+    asset_id = str(p.get("model_asset_id", ""))
+    path = assets(asset_id) if assets is not None and asset_id else None
+    mesh = cache.get_mesh(path) if path is not None else None
+    if mesh is None:
+        rect = QRectF(-size / 2, -size / 2, size, size)
+        painter.setPen(QPen(QColor("#FF5555"), 3, Qt.PenStyle.DashLine))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRect(rect)
+        painter.setPen(QPen(QColor("#CFD8DC")))
+        painter.drawText(rect, int(Qt.AlignmentFlag.AlignCenter), "Modèle 3D absent ou illisible")
+        return
+    screen, colors, order = project(mesh, float(p.get("yaw_deg", 0.0)), float(p.get("pitch_deg", 0.0)), size)
+    rgba = (np.clip(colors, 0.0, 1.0) * 255).astype(int)
+    painter.save()
+    for i in order:
+        r, g, b, a = (int(c) for c in rgba[i])
+        color = QColor(r, g, b, a)
+        painter.setBrush(color)
+        painter.setPen(QPen(color, 0.6))  # léger trait de même couleur : pas de fentes entre faces
+        painter.drawPolygon(QPolygonF([QPointF(float(x), float(y)) for x, y in screen[i]]))
+    painter.restore()
+
+
 def _draw_group(painter: QPainter, node: NodeState, assets: AssetResolver | None, cache: ImageCache) -> None:
     return None
 
@@ -658,6 +743,7 @@ _DRAWERS: dict[str, Callable[[QPainter, NodeState, AssetResolver | None, ImageCa
     "formula": _draw_formula,
     "image_sequence": _draw_image_sequence,
     "image": _draw_image,
+    "model3d": _draw_model3d,
     "group": _draw_group,
 }
 
@@ -709,6 +795,14 @@ def local_bounds(node: NodeState) -> QRectF:
     if k == "image_sequence":
         w = float(p.get("width", 400.0))
         h = float(p.get("height", 0.0) or 0.0) or w
+        return QRectF(-w / 2, -h / 2, w, h)
+    if k == "model3d":
+        s = float(p.get("size", 400.0))
+        return QRectF(-s / 2, -s / 2, s, s)
+    if k == "camera":  # cadre filmé, dans le repère de la scène
+        zoom = max(0.05, float(p.get("zoom", 1.0)))
+        w = float(p.get("view_width", 1920.0)) / zoom
+        h = float(p.get("view_height", 1080.0)) / zoom
         return QRectF(-w / 2, -h / 2, w, h)
     return QRectF(-20, -20, 40, 40)
 
