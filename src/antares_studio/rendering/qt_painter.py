@@ -710,6 +710,11 @@ def local_bounds(node: NodeState) -> QRectF:
         w = float(p.get("width", 400.0))
         h = float(p.get("height", 0.0) or 0.0) or w
         return QRectF(-w / 2, -h / 2, w, h)
+    if k == "camera":  # cadre filmé, dans le repère de la scène
+        zoom = max(0.05, float(p.get("zoom", 1.0)))
+        w = float(p.get("view_width", 1920.0)) / zoom
+        h = float(p.get("view_height", 1080.0)) / zoom
+        return QRectF(-w / 2, -h / 2, w, h)
     return QRectF(-20, -20, 40, 40)
 
 

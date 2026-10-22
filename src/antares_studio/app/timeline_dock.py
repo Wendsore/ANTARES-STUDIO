@@ -9,6 +9,7 @@ from typing import Any
 from PySide6.QtCore import QElapsedTimer, QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QBrush,
+    QColor,
     QContextMenuEvent,
     QFont,
     QKeyEvent,
@@ -23,6 +24,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMenu,
     QPushButton,
@@ -39,11 +41,13 @@ from antares_studio.app.document import ProjectDocument
 from antares_studio.domain.commands import (
     MoveKeyframe,
     RemoveKeyframe,
+    RemoveMarker,
     SetAudioClipAttr,
     SetKeyframeEasing,
+    SetMarkerAttr,
 )
 from antares_studio.domain.kinds import property_label
-from antares_studio.domain.model import EASINGS, Keyframe, Track
+from antares_studio.domain.model import EASINGS, Keyframe, Marker, Track
 from antares_studio.timeline.easing import EASING_LABELS
 
 RULER_H = 26
@@ -80,6 +84,8 @@ class TimelineView(QWidget):
         self._scrubbing = False
         self._drag_clip: tuple[str, int, float] | None = None  # (clip_id, offset de départ, x souris)
         self._drag_clip_target: int | None = None
+        self._drag_marker: tuple[str, int, float] | None = None  # (marker_id, image de départ, x souris)
+        self._drag_marker_target: int | None = None
         self.show_all_objects = True
         self.waveforms: dict[str, tuple[Any, float]] = {}  # asset_id -> (pics 50 Hz, durée)
         self.setMinimumHeight(120)
@@ -276,6 +282,7 @@ class TimelineView(QWidget):
                     secs = f / fps
                     p.drawText(QPointF(x + 3, 12), f"{secs:.1f}s" if step < fps else f"{secs:.0f}s")
             f += step
+        self._paint_markers(p, scene.sorted_markers())
         # tête de lecture
         x = self.frame_to_x(self.document.frame)
         if x >= LABEL_W:
@@ -288,6 +295,74 @@ class TimelineView(QWidget):
         p.setPen(QPen(theme.TEXT_MUTED, 1))
         p.drawLine(QPointF(LABEL_W, 0), QPointF(LABEL_W, self.height()))
         p.end()
+
+    def _marker_frame(self, m: Marker) -> int:
+        if (
+            self._drag_marker is not None
+            and self._drag_marker[0] == m.id
+            and self._drag_marker_target is not None
+        ):
+            return self._drag_marker_target
+        return m.frame
+
+    def _paint_markers(self, p: QPainter, markers: list[Marker]) -> None:
+        """Repères : fanion dans la règle, trait fin sur toute la hauteur, nom tronqué à l'espace libre."""
+        color = QColor(theme.MARKER)
+        xs = [self.frame_to_x(self._marker_frame(m)) for m in markers]
+        for i, (m, x) in enumerate(zip(markers, xs, strict=True)):
+            if x < LABEL_W or x > self.width():
+                continue
+            line = QColor(color)
+            line.setAlpha(110)
+            p.setPen(QPen(line, 1, Qt.PenStyle.DashLine))
+            p.drawLine(QPointF(x, RULER_H), QPointF(x, self.height()))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(color))
+            p.drawPolygon(QPolygonF([QPointF(x, 14), QPointF(x + 9, 14), QPointF(x + 9, 22), QPointF(x, 26)]))
+            room = (xs[i + 1] if i + 1 < len(xs) else self.width()) - x - 14
+            if room > 24 and m.label:
+                p.setPen(color)
+                metrics = p.fontMetrics()
+                text = metrics.elidedText(m.label, Qt.TextElideMode.ElideRight, int(room))
+                p.drawText(QPointF(x + 12, 23), text)
+
+    def marker_at(self, pos: QPointF) -> Marker | None:
+        scene = self.document.scene
+        if scene is None or pos.y() > RULER_H:
+            return None
+        for m in scene.sorted_markers():
+            if -4 <= pos.x() - self.frame_to_x(m.frame) <= 11:
+                return m
+        return None
+
+    def rename_marker(self, marker: Marker, label: str | None = None) -> None:
+        scene = self.document.scene
+        if scene is None:
+            return
+        if label is None:
+            label, ok = QInputDialog.getText(self, "Renommer le repère", "Nom du repère :", text=marker.label)
+            if not ok:
+                return
+        label = label.strip()
+        if label and label != marker.label:
+            self.document.push(SetMarkerAttr(scene.id, marker.id, "label", label))
+
+    def marker_menu(self, marker: Marker) -> QMenu:
+        menu = QMenu(self)
+        menu.addSection(marker.label or "Repère")
+        menu.addAction("Aller au repère").triggered.connect(lambda: self.document.set_frame(marker.frame))
+        menu.addAction("Renommer…").triggered.connect(lambda: self.rename_marker(marker))
+        scene = self.document.scene
+        if scene is not None:
+            menu.addAction("Supprimer le repère").triggered.connect(
+                lambda: self.document.push(RemoveMarker(scene.id, marker.id))
+            )
+        return menu
+
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
+        marker = self.marker_at(event.position())
+        if marker is not None:
+            self.rename_marker(marker)
 
     def _draw_diamond(self, p: QPainter, x: float, y: float, selected: bool) -> None:
         r = 6.0
@@ -355,6 +430,10 @@ class TimelineView(QWidget):
         return True
 
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:
+        marker = self.marker_at(QPointF(event.pos()))
+        if marker is not None:
+            self.marker_menu(marker).exec(event.globalPos())
+            return
         key = self._key_at(QPointF(event.pos()))
         if key is not None:
             self.keyframe_menu(key).exec(event.globalPos())
@@ -386,6 +465,13 @@ class TimelineView(QWidget):
         if event.button() != Qt.MouseButton.LeftButton:
             return
         self.setFocus()
+        marker = self.marker_at(pos)
+        if marker is not None:
+            self._drag_marker = (marker.id, marker.frame, pos.x())
+            self._drag_marker_target = marker.frame
+            self.document.set_frame(marker.frame)
+            self.update()
+            return
         key = self._key_at(pos)
         if key is not None:
             self._drag_key = key
@@ -416,6 +502,11 @@ class TimelineView(QWidget):
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         pos = event.position()
+        if self._drag_marker is not None:
+            _mid, start, x0 = self._drag_marker
+            self._drag_marker_target = max(0, start + int(round((pos.x() - x0) / self.px_per_frame)))
+            self.update()
+            return
         if self._drag_clip is not None:
             _cid, start_offset, x_start = self._drag_clip
             delta = (pos.x() - x_start) / self.px_per_frame
@@ -428,6 +519,17 @@ class TimelineView(QWidget):
             self.document.set_frame(self.x_to_frame(pos.x()))
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if self._drag_marker is not None:
+            mid, start, _x0 = self._drag_marker
+            target = self._drag_marker_target
+            scene = self.document.scene
+            self._drag_marker = None
+            self._drag_marker_target = None
+            if scene is not None and target is not None and target != start:
+                self.document.push(SetMarkerAttr(scene.id, mid, "frame", target, label="Déplacer un repère"))
+                self.document.set_frame(target)
+            self.update()
+            return
         if self._drag_clip is not None:
             cid, start_offset, _x = self._drag_clip
             scene = self.document.scene

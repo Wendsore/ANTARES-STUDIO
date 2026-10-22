@@ -38,7 +38,7 @@ CATEGORIES: dict[str, tuple[str, ...]] = {
     "Maths": ("formula",),
     "3D (Blender facultatif)": ("image_sequence",),
     "Images": ("image",),
-    "Organisation": ("group",),
+    "Organisation": ("group", "camera"),
 }
 
 

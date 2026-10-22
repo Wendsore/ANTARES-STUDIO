@@ -98,3 +98,61 @@ def test_vertical_project_exports_vertical_video(qapp, tmp_path: Path) -> None: 
     plan = build_render_plan(project, project.scenes[0].id, "draft_720p", str(tmp_path / "v.mp4"))
     result = export_video(project, plan, write_manifest=False)
     assert (result.probe.width, result.probe.height) == (720, 1280)
+
+
+def decode_frame_rgb(video: Path, index: int, width: int, height: int) -> bytes:
+    """Image ``index`` de la vidéo décodée par FFmpeg (RGB 8 bits), pour mesurer ce qui a été encodé."""
+    import subprocess
+
+    ffmpeg = ff.require_ffmpeg()
+    out = subprocess.run(
+        [
+            str(ffmpeg),
+            "-v",
+            "error",
+            "-i",
+            str(video),
+            "-vf",
+            f"select=eq(n\\,{index})",
+            "-frames:v",
+            "1",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "pipe:1",
+        ],
+        capture_output=True,
+        check=True,
+    ).stdout
+    assert len(out) == width * height * 3
+    return out
+
+
+@needs_ffmpeg
+def test_export_project_renders_scene_transition(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    """Fondu enchaîné rouge → bleu sur 10 images : mélange mesuré au milieu, durée totale inchangée."""
+    from antares_studio.domain.model import SceneTransition
+
+    project = create_project("Transition", Canvas(1280, 720, 30, 1), "", 1)
+    red = project.scenes[0]
+    red.duration_frames, red.background = 12, "#FF0000"
+    blue = Scene.create("Bleu", duration_frames=12, background="#0000FF")
+    blue.transition = SceneTransition("fade", 9)
+    project.scenes.append(blue)
+    out = tmp_path / "fondu.mp4"
+    result = export_project(project, "draft_720p", str(out))
+    assert result.probe.nb_frames == 24
+    w, h = result.probe.width, result.probe.height
+
+    def center(index: int) -> tuple[int, int, int]:
+        px = decode_frame_rgb(out, index, w, h)
+        i = (h // 2 * w + w // 2) * 3
+        return px[i], px[i + 1], px[i + 2]
+
+    r0, _g0, b0 = center(11)  # dernière image rouge
+    rm, _gm, bm = center(12 + 4)  # milieu du fondu (u = 0,5)
+    r1, _g1, b1 = center(12 + 11)  # après le fondu : bleu
+    assert r0 > 200 and b0 < 50
+    assert 90 < rm < 170 and 90 < bm < 170  # tolérance : compression H.264 et conversion YUV
+    assert r1 < 50 and b1 > 200

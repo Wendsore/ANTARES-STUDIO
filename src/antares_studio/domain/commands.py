@@ -375,7 +375,7 @@ class AddMarker:
     label: str = "Ajouter un repère"
 
     def do(self, project: Project) -> None:
-        project.scene(self.scene_id).markers.append(copy.deepcopy(self.marker))
+        project.scene(self.scene_id).markers.append(self.marker)
 
     def undo(self, project: Project) -> None:
         scene = project.scene(self.scene_id)

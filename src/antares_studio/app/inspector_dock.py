@@ -259,6 +259,39 @@ class InspectorDock(QWidget):
         bg.set_value(scene.background)
         bg.changed.append(lambda v: self._scene_attr("background", v))
         self.form.addRow("Fond :", bg)
+        from antares_studio.rendering.transitions import TRANSITION_LABELS
+
+        kind = QComboBox()
+        kind.setObjectName("scene_transition")
+        for k, label in TRANSITION_LABELS.items():
+            kind.addItem(label, k)
+        kind.setCurrentIndex(max(0, kind.findData(scene.transition.kind)))
+        kind.setToolTip(
+            "Entrée de la scène depuis la dernière image de la scène précédente (du noir pour la première)"
+        )
+        tr_dur = QSpinBox()
+        tr_dur.setObjectName("scene_transition_duration")
+        tr_dur.setRange(1, 600)
+        tr_dur.setValue(scene.transition.duration_frames)
+        tr_dur.setSuffix(" images")
+        tr_dur.setToolTip(f"{scene.transition.duration_frames / fps:.2f} s ; prise sur le début de la scène")
+        tr_dur.setEnabled(scene.transition.kind != "none")
+
+        def set_transition() -> None:
+            from antares_studio.domain.model import SceneTransition
+
+            new = SceneTransition(str(kind.currentData()), int(tr_dur.value()))
+            tr_dur.setEnabled(new.kind != "none")
+            self._scene_attr("transition", new)
+
+        kind.currentIndexChanged.connect(lambda _i: set_transition())
+        tr_dur.editingFinished.connect(set_transition)
+        row = QWidget()
+        lay = QHBoxLayout(row)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(kind, 1)
+        lay.addWidget(tr_dur)
+        self.form.addRow("Transition :", row)
         c = self.document.project.canvas
         self.form.addRow(QLabel(f"Canevas : {c.width} × {c.height} px, {float(c.fps):g} images/s"))
         self._build_metadata_form()

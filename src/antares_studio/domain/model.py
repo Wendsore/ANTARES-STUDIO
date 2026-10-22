@@ -229,10 +229,6 @@ class Scene:
     def sorted_markers(self) -> list[Marker]:
         return sorted(self.markers, key=lambda m: (m.frame, m.id))
 
-    def camera(self) -> Node | None:
-        """Caméra active : le premier nœud « camera » visible de la scène (aucune = cadre fixe)."""
-        return next((n for n in self.nodes if n.kind == "camera" and n.visible), None)
-
 
 @dataclass
 class AssetLicense:

@@ -12,7 +12,7 @@ from typing import Any
 
 from antares_studio.domain.colors import is_color, mix_color
 from antares_studio.domain.kinds import spec_for
-from antares_studio.domain.model import Node, Project, Scene, Track, Value
+from antares_studio.domain.model import Canvas, Node, Project, Scene, Track, Value
 from antares_studio.domain.properties import get_property
 from antares_studio.timeline.easing import apply_easing
 
@@ -73,6 +73,8 @@ class SceneState:
     background: str
     nodes: tuple[NodeState, ...]  # ordre de dessin (z_index croissant, puis ordre de déclaration)
     subtitle: str | None = None  # texte du sous-titre actif, incrusté par le même painter que les objets
+    camera: Affine = IDENTITY  # scène -> image (déjà composée dans ``world`` de chaque objet)
+    camera_id: str | None = None  # caméra appliquée (None : cadre fixe)
 
     def node(self, node_id: str) -> NodeState:
         for n in self.nodes:
@@ -147,7 +149,17 @@ def resolve_node(node: Node, tracks: list[Track], frame: int) -> dict[str, Any]:
     return values
 
 
-def evaluate_scene(scene: Scene, frame: int) -> SceneState:
+def camera_affine(center: tuple[float, float], rotation_deg: float, zoom: float, canvas: Canvas) -> Affine:
+    """Transformation de la caméra : le point ``center`` vient au centre de l'image, agrandi ``zoom`` fois
+    et tourné de ``-rotation_deg`` (incliner la caméra fait tourner la scène en sens inverse)."""
+    zoom = max(0.05, float(zoom))
+    to_origin: Affine = (1.0, 0.0, 0.0, 1.0, -center[0], -center[1])
+    view = local_transform([canvas.width / 2, canvas.height / 2], -rotation_deg, [zoom, zoom])
+    return compose(view, to_origin)
+
+
+def evaluate_scene(scene: Scene, frame: int, canvas: Canvas | None = None) -> SceneState:
+    """État de la scène à ``frame`` ; avec ``canvas``, la caméra active (s'il y en a une) est appliquée."""
     frame = max(0, min(int(frame), max(0, scene.duration_frames - 1)))
     tracks_by_target: dict[str, list[Track]] = {}
     for t in scene.tracks:
@@ -184,9 +196,28 @@ def evaluate_scene(scene: Scene, frame: int) -> SceneState:
     for n in scene.nodes:
         compute(n.id)
 
+    camera: Affine = IDENTITY
+    camera_id: str | None = None
+    if canvas is not None:
+        cam = next((n for n in scene.nodes if n.kind == "camera" and world_visible[n.id]), None)
+        if cam is not None:
+            r = resolved[cam.id]
+            cw = world[cam.id]
+            # agrandir le cadre avec les poignées (échelle) revient à reculer la caméra
+            zoom = float(r["params.zoom"]) / max(0.01, abs(float(r["scale.x"])))
+            camera = camera_affine((cw[4], cw[5]), float(r["rotation_deg"]), zoom, canvas)
+            camera_id = cam.id
+            for nid in world:
+                if nodes_by_id[nid].kind != "camera":
+                    world[nid] = compose(camera, world[nid])
+    view_w = float(canvas.width) if canvas else 1920.0
+    view_h = float(canvas.height) if canvas else 1080.0
+
     states: list[NodeState] = []
     for n in scene.nodes:
         r = resolved[n.id]
+        if n.kind == "camera":  # taille du cadre (bornes et contour dans l'éditeur)
+            r = {**r, "params.view_width": view_w, "params.view_height": view_h}
         states.append(
             NodeState(
                 id=n.id,
@@ -215,11 +246,14 @@ def evaluate_scene(scene: Scene, frame: int) -> SceneState:
         background=scene.background,
         nodes=tuple(states),
         subtitle=sub.text if sub is not None else None,
+        camera=camera,
+        camera_id=camera_id,
     )
 
 
-def evaluate(project: Project, scene_id: str, frame: int) -> SceneState:
-    return evaluate_scene(project.scene(scene_id), frame)
+def evaluate(project: Project, scene_id: str, frame: int, use_camera: bool = True) -> SceneState:
+    """État rendu à l'export ; ``use_camera=False`` montre toute la scène (vue de travail de l'éditeur)."""
+    return evaluate_scene(project.scene(scene_id), frame, project.canvas if use_camera else None)
 
 
 def evaluate_at_seconds(project: Project, scene_id: str, seconds: float) -> SceneState:

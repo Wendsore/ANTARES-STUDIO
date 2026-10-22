@@ -220,6 +220,12 @@ KINDS: dict[str, KindSpec] = {
         ),
         KindSpec("group", "Groupe", container=True),
         KindSpec(
+            "camera",
+            "Caméra (cadrage animé)",
+            # position = point visé (centre de l'image), rotation = inclinaison du cadre
+            params=(ParamSpec("zoom", "float", 1.0, True, "Zoom (1 = cadre entier)", min=0.05, max=50.0),),
+        ),
+        KindSpec(
             "orbit_path",
             "Orbite (tracé)",
             params=(ParamSpec("radius", "float", 300.0, True, "Rayon", min=0),),

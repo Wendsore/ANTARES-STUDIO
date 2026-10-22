@@ -23,6 +23,41 @@ from antares_studio.domain.model import Node
 from antares_studio.timeline.presets import PRESETS
 
 
+def sync_targets(document: ProjectDocument) -> list[tuple[str, tuple[int, int | None]]]:
+    """Moments de la scène sur lesquels caler une animation : (libellé, (début, durée ou None)).
+
+    Repère : du repère au suivant (ou durée inchangée si c'est le dernier) ; sous-titre : sa plage ;
+    clip audio : de son début à sa fin.
+    """
+    scene = document.scene
+    if scene is None:
+        return []
+    fps = float(document.project.canvas.fps)
+    out: list[tuple[str, tuple[int, int | None]]] = []
+    markers = scene.sorted_markers()
+    for i, m in enumerate(markers):
+        nxt = markers[i + 1].frame if i + 1 < len(markers) else None
+        dur = nxt - m.frame if nxt is not None and nxt > m.frame else None
+        out.append((f"Repère « {m.label or 'sans nom'} » ({m.frame / fps:.2f} s)", (m.frame, dur)))
+    for s in scene.subtitles:
+        text = s.text.replace("\n", " ")
+        short = text if len(text) <= 40 else text[:39] + "…"
+        out.append(
+            (
+                f"Sous-titre « {short} » ({s.start_frame / fps:.2f} s)",
+                (s.start_frame, s.end_frame - s.start_frame),
+            )
+        )
+    for c in scene.audio:
+        end = c.out_seconds if c.out_seconds is not None else c.duration_seconds
+        length = max(0.0, end - c.in_seconds)
+        dur_frames = int(round(length * fps)) if length > 0 else None
+        out.append(
+            (f"Audio « {c.name or 'clip'} » ({c.offset_frames / fps:.2f} s)", (c.offset_frames, dur_frames))
+        )
+    return out
+
+
 class PresetDialog(QDialog):
     def __init__(self, preset_id: str, document: ProjectDocument, node: Node, parent: QWidget | None = None):
         super().__init__(parent)
@@ -97,6 +132,21 @@ class PresetDialog(QDialog):
                 label += f" (à {fps:g} img/s)"
             form.addRow(label + " :", editor)
         layout.addLayout(form)
+        self.sync = QComboBox()
+        self.sync.setObjectName("preset_sync")
+        self.sync.setToolTip("Règle le début et la durée sur un repère, un sous-titre ou un clip audio")
+        self.sync.addItem("(début et durée saisis ci-dessus)", None)
+        for label, span in sync_targets(document):
+            self.sync.addItem(label, span)
+        self.sync.currentIndexChanged.connect(self._apply_sync)
+        sync_form = QFormLayout()
+        sync_form.addRow("Caler sur :", self.sync)
+        layout.addLayout(sync_form)
+        if self.sync.count() == 1:
+            self.sync.setEnabled(False)
+            self.sync.setToolTip(
+                "Ajoutez un repère (touche M), un sous-titre ou un clip audio pour caler dessus"
+            )
         if preset_id == "orbit":
             btn = QPushButton("Utiliser la position actuelle de l'objet comme rayon/phase")
             btn.clicked.connect(self._use_current_position)
@@ -109,6 +159,15 @@ class PresetDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    def _apply_sync(self, index: int) -> None:
+        span = self.sync.itemData(index)
+        if not span:
+            return
+        start, duration = span
+        self._editors["start_frame"].setValue(int(start))  # type: ignore[attr-defined]
+        if duration is not None:
+            self._editors["duration_frames"].setValue(max(1, int(duration)))  # type: ignore[attr-defined]
 
     def _use_current_position(self) -> None:
         import math

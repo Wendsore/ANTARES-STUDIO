@@ -27,9 +27,9 @@ from antares_studio.domain.validation import ProjectValidationError, validate_pr
 from antares_studio.persistence.schema import project_to_dict
 from antares_studio.rendering import ffmpeg as ff
 from antares_studio.rendering.plan import AudioClipPlan, RenderPlan, build_render_plan
-from antares_studio.rendering.qt_painter import AssetResolver, ImageCache, render_state_to_image
+from antares_studio.rendering.qt_painter import AssetResolver, ImageCache
+from antares_studio.rendering.transitions import FrameRenderer
 from antares_studio.resources.licenses import credits_lines
-from antares_studio.timeline.evaluator import evaluate
 
 ProgressCallback = Callable[[int, int], None]
 
@@ -180,7 +180,7 @@ def export_video(
     cancel = cancel or threading.Event()
     encoder = ff.FrameEncoder(_build_ffmpeg_command(ffmpeg, plan, tmp_output))
     t0 = time.perf_counter()
-    cache = ImageCache()
+    renderer = FrameRenderer(project, assets, ImageCache())
     scene = project.scene(plan.scene_id)
     try:
         encoder.start()
@@ -189,16 +189,7 @@ def export_video(
         for i in range(total):
             if cancel.is_set():
                 raise RenderCancelledError("export annulé")
-            state = evaluate(project, scene.id, plan.start_frame + i)
-            img = render_state_to_image(
-                state,
-                project.canvas,
-                plan.width,
-                plan.height,
-                assets,
-                cache,
-                subtitle_style=project.subtitle_style,
-            )
+            img = renderer.render(scene.id, plan.start_frame + i, plan.width, plan.height)
             data = bytes(img.constBits())
             if len(data) != frame_bytes:
                 raise RenderError("taille d'image inattendue (stride non contigu)")

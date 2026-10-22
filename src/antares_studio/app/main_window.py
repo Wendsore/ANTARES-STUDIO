@@ -44,6 +44,7 @@ from antares_studio.app.tutorial_panel import Highlighter, TutorialPanel
 from antares_studio.domain.clipboard import MIME_TYPE as CLIPBOARD_MIME
 from antares_studio.domain.clipboard import PastePayload, copy_nodes, read_payload, remap_assets
 from antares_studio.domain.commands import (
+    AddMarker,
     AddNode,
     AddScene,
     RemoveNode,
@@ -55,7 +56,7 @@ from antares_studio.domain.commands import (
 from antares_studio.domain.ids import new_id
 from antares_studio.domain.kinds import spec_for
 from antares_studio.domain.layout import ALIGN_MODES, align_deltas, distribute_deltas
-from antares_studio.domain.model import AssetLicense, Canvas, Node, Scene
+from antares_studio.domain.model import AssetLicense, Canvas, Marker, Node, Scene
 from antares_studio.domain.validation import ProjectValidationError
 from antares_studio.help import topics
 from antares_studio.help.tutorials import TUTORIALS, TUTORIALS_BY_ID, TutorialContext
@@ -85,6 +86,8 @@ ACTION_ICONS: dict[str, str] = {
     "act_export": "clapperboard",
     "act_inventory": "shield-check",
     "act_scale_warning": "triangle-alert",
+    "act_add_marker": "bookmark",
+    "act_camera_view": "video",
     "act_undo": "undo-2",
     "act_redo": "redo-2",
     "act_delete": "trash-2",
@@ -310,6 +313,11 @@ class MainWindow(QMainWindow):
         self.act_frame_next = self._action(
             "Image suivante", lambda: self.document.set_frame(self.document.frame + 1), "."
         )
+        self.act_add_marker = self._action(
+            "Ajouter un &repère à l'image courante", self.add_marker, "M", "Repère nommé sur la Timeline"
+        )
+        self.act_prev_marker = self._action("Repère précédent", lambda: self.jump_marker(-1), "[")
+        self.act_next_marker = self._action("Repère suivant", lambda: self.jump_marker(1), "]")
         self.act_go_start = self._action("Début", self.timeline.go_start, "Home")
         self.act_go_end = self._action("Fin", self.timeline.go_end, "End")
         self.act_zoom_in = self._action(
@@ -336,6 +344,13 @@ class MainWindow(QMainWindow):
         self.act_guides.setChecked(True)
         self.act_safe = self._action("Zones &sûres (sous-titres)", self.toggle_safe_zones)
         self.act_safe.setCheckable(True)
+        self.act_camera_view = self._action(
+            "Voir à travers la &caméra",
+            self.toggle_camera_view,
+            tip="Décoché : toute la scène est visible et le cadre de la caméra est dessiné par-dessus",
+        )
+        self.act_camera_view.setCheckable(True)
+        self.act_camera_view.setChecked(True)
         self.act_reset_layout = self._action("Réinitialiser la disposition", self.reset_layout)
         self.act_about = self._action("À &propos d'ANTARES Studio", lambda: AboutDialog(self).exec())
         self.act_diag = self._action("&Diagnostics…", self.show_diagnostics)
@@ -376,6 +391,9 @@ class MainWindow(QMainWindow):
             self.act_frame_next,
             self.act_go_start,
             self.act_go_end,
+            self.act_add_marker,
+            self.act_prev_marker,
+            self.act_next_marker,
         ):
             act.setShortcutContext(Qt.ShortcutContext.WindowShortcut)
             self.addAction(act)
@@ -432,6 +450,7 @@ class MainWindow(QMainWindow):
             "callout",
             "image",
             "group",
+            "camera",
         ):
             spec = spec_for(kind)
             m_add.addAction(self._action(spec.label, lambda _c=False, k=kind: self.add_node_of_kind(k)))
@@ -456,6 +475,9 @@ class MainWindow(QMainWindow):
             self.act_frame_next,
         ):
             m_anim.addAction(a)
+        m_anim.addSeparator()
+        for a in (self.act_add_marker, self.act_prev_marker, self.act_next_marker):
+            m_anim.addAction(a)
         m_narr = mb.addMenu("&Narration")
         m_narr.addAction(self._action("Importer une &narration audio…", self.narration.audio.import_audio))
         m_narr.addAction(
@@ -473,7 +495,7 @@ class MainWindow(QMainWindow):
         for a in (self.act_zoom_in, self.act_zoom_out, self.act_zoom_fit):
             m_view.addAction(a)
         m_view.addSeparator()
-        for a in (self.act_grid, self.act_snap, self.act_guides, self.act_safe):
+        for a in (self.act_grid, self.act_snap, self.act_guides, self.act_safe, self.act_camera_view):
             m_view.addAction(a)
         m_view.addSeparator()
         for dock in self._all_docks():
@@ -620,6 +642,49 @@ class MainWindow(QMainWindow):
     def toggle_guides(self, on: bool) -> None:
         self.canvas.smart_guides = on
 
+    def toggle_camera_view(self, on: bool) -> None:
+        self.document.preview_camera = on
+        self.canvas.update()
+        self.inspector.refresh_values()
+
+    # --- repères --------------------------------------------------------------------
+    def add_marker(self, label: str | None = None) -> Marker | None:
+        scene = self.document.scene
+        if scene is None:
+            return None
+        frame = self.document.frame
+        existing = next((m for m in scene.markers if m.frame == frame), None)
+        if existing is not None:
+            self.statusBar().showMessage(f"Un repère existe déjà ici : « {existing.label} ».", 4000)
+            return existing
+        if label is None:
+            label = f"Repère {len(scene.markers) + 1}"
+        marker = Marker.create(frame, label)
+        self.document.push(AddMarker(scene.id, marker))
+        self.statusBar().showMessage(
+            f"Repère « {label} » ajouté. Double-clic dessus dans la règle de la Timeline pour le renommer.",
+            5000,
+        )
+        return marker
+
+    def jump_marker(self, direction: int) -> bool:
+        """Place la tête de lecture sur le repère précédent (-1) ou suivant (+1)."""
+        scene = self.document.scene
+        if scene is None:
+            return False
+        frames = sorted({m.frame for m in scene.markers})
+        f = self.document.frame
+        target = (
+            next((x for x in frames if x > f), None)
+            if direction > 0
+            else next((x for x in reversed(frames) if x < f), None)
+        )
+        if target is None:
+            return False
+        self.timeline.pause()
+        self.document.set_frame(target)
+        return True
+
     def toggle_safe_zones(self, on: bool) -> None:
         self.canvas.show_safe_zones = on
         self.canvas.update()
@@ -637,6 +702,7 @@ class MainWindow(QMainWindow):
         self.narration.document = document
         self.narration.audio.document = document
         self.narration.subtitles.document = document
+        document.preview_camera = self.act_camera_view.isChecked()
         self.act_undo.triggered.disconnect()
         self.act_redo.triggered.disconnect()
         self.act_undo.triggered.connect(document.undo.undo)
@@ -888,8 +954,14 @@ class MainWindow(QMainWindow):
         if scene is None:
             return None
         spec = spec_for(kind)
-        center = at or self.canvas.visible_center_canvas()
         c = self.document.project.canvas
+        if kind == "camera":  # cadre initial = image entière : rien ne change tant qu'on ne l'anime pas
+            at = QPointF(c.width / 2, c.height / 2)
+            if any(n.kind == "camera" for n in scene.nodes):
+                self.statusBar().showMessage(
+                    "Cette scène a déjà une caméra : seule la première caméra visible filme.", 6000
+                )
+        center = at or self.canvas.visible_center_canvas()
         x = max(0.0, min(float(c.width), center.x()))
         y = max(0.0, min(float(c.height), center.y()))
         count = sum(1 for n in scene.nodes if n.kind == kind) + 1

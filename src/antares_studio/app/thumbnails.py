@@ -26,6 +26,7 @@ KIND_ICONS: dict[str, str] = {
     "image": "image",
     "image_sequence": "box",
     "group": "group",
+    "camera": "video",
 }
 PRESET_ICONS: dict[str, str] = {
     "appear": "eye",

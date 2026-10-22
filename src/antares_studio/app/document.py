@@ -45,7 +45,9 @@ class ProjectDocument(QObject):
         self._selection: list[str] = []
         self._scene_id: str = project.scenes[0].id if project.scenes else ""
         self.auto_key = False
-        self._state_cache: tuple[int, str, int, SceneState] | None = None
+        # éditeur : voir à travers la caméra (comme l'export) ou toute la scène avec le cadre en surimpression
+        self.preview_camera = True
+        self._state_cache: tuple[int, str, int, bool, SceneState] | None = None
         self._last_dirty = False
 
     # --- accès -----------------------------------------------------------
@@ -88,10 +90,10 @@ class ProjectDocument(QObject):
         scene = self.scene
         if scene is None:
             return None
-        key = (self.version, scene.id, self._frame)
-        if self._state_cache and self._state_cache[:3] == key:
-            return self._state_cache[3]
-        st = evaluate(self.project, scene.id, self._frame)
+        key = (self.version, scene.id, self._frame, self.preview_camera)
+        if self._state_cache and self._state_cache[:4] == key:
+            return self._state_cache[4]
+        st = evaluate(self.project, scene.id, self._frame, use_camera=self.preview_camera)
         self._state_cache = (*key, st)
         return st
 
