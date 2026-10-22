@@ -110,6 +110,7 @@ def test_aud03_aud05_export_with_offset_gain_and_no_drift(tmp_path: Path, qapp) 
 
     project.assets.append(Asset(id="asset-0123456789ab", path="audio/voix.wav", kind="audio"))
     scene.audio.append(AudioClip.create("asset-0123456789ab", "Voix", offset_frames=36, gain=0.5))  # 1,2 s
+    project.settings["loudnorm"] = False  # on mesure le gain du clip seul, sans la normalisation finale
     out = tmp_path / "mix.mp4"
     plans = audio_plans_for_scene(project, scene.id, lambda _id: src)
     plan = build_render_plan(project, scene.id, "draft_720p", str(out), audio=plans)

@@ -119,7 +119,7 @@ class ProbeResult:
     audio_channels: int = 0
 
 
-def probe(ffprobe: Path, path: Path) -> ProbeResult:
+def probe(ffprobe: Path, path: Path, require_video: bool = True) -> ProbeResult:
     cmd = [
         str(ffprobe),
         "-v",
@@ -138,9 +138,23 @@ def probe(ffprobe: Path, path: Path) -> ProbeResult:
         raise FFmpegError(f"ffprobe a échoué sur {path.name}", out.stderr, out.returncode)
     data = json.loads(out.stdout or "{}")
     video = next((s for s in data.get("streams", []) if s.get("codec_type") == "video"), None)
+    audio = next((s for s in data.get("streams", []) if s.get("codec_type") == "audio"), None)
+    if video is None and audio is not None and not require_video:
+        # bande-son seule : dimensions et images à zéro, durée lue sur le flux audio
+        return ProbeResult(
+            width=0,
+            height=0,
+            fps=Fraction(0),
+            nb_frames=0,
+            duration=float(audio.get("duration") or data.get("format", {}).get("duration") or 0.0),
+            video_codec="",
+            has_audio=True,
+            audio_codec=str(audio.get("codec_name", "")),
+            audio_sample_rate=int(audio.get("sample_rate", 0)),
+            audio_channels=int(audio.get("channels", 0)),
+        )
     if video is None:
         raise FFmpegError(f"aucun flux vidéo dans {path.name}", out.stderr)
-    audio = next((s for s in data.get("streams", []) if s.get("codec_type") == "audio"), None)
     num, _, den = str(video.get("r_frame_rate", "0/1")).partition("/")
     fps = Fraction(int(num or 0), int(den or 1)) if int(den or 1) else Fraction(0)
     nb = video.get("nb_read_frames") or video.get("nb_frames") or 0

@@ -350,15 +350,17 @@ class ReorderNode:
 @dataclass
 class SetSceneProperty:
     scene_id: str
-    attr: str  # name | duration_frames | background | transition
+    attr: str  # name | duration_frames | background | transition | post
     value: Any
     label: str = "Modifier la scène"
     _old: Any = field(default=None, repr=False)
 
     def do(self, project: Project) -> None:
         scene = project.scene(self.scene_id)
-        if self.attr not in ("name", "duration_frames", "background", "transition"):
+        if self.attr not in ("name", "duration_frames", "background", "transition", "post"):
             raise KeyError(self.attr)
+        if self.attr == "post" and not isinstance(self.value, dict):
+            raise TypeError("post : dictionnaire de filtres attendu")
         if self.attr == "transition" and not isinstance(self.value, SceneTransition):
             raise TypeError("transition : SceneTransition attendue")
         self._old = copy.deepcopy(getattr(scene, self.attr))

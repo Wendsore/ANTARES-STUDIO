@@ -29,6 +29,7 @@ from PySide6.QtWidgets import QWidget
 
 from antares_studio.app import theme
 from antares_studio.app.document import ProjectDocument
+from antares_studio.domain.effects import post_is_neutral
 from antares_studio.domain.layout import Guide, Rect, snap_rect
 from antares_studio.rendering.qt_painter import ImageCache, local_bounds, paint_scene_state
 from antares_studio.rendering.transitions import FrameRenderer, transition_at
@@ -230,7 +231,9 @@ class CanvasWidget(QWidget):
             painter.translate(self.offset)
             w = max(1, int(round(c.width * self.zoom)))
             h = max(1, int(round(c.height * self.zoom)))
-            if transition_at(self.document.project, state.scene_id, state.frame) is not None:
+            scene_now = self.document.project.find_scene(state.scene_id)
+            filtered = scene_now is not None and not post_is_neutral(scene_now.post)
+            if filtered or transition_at(self.document.project, state.scene_id, state.frame) is not None:
                 if self._frames is None or self._frames.project is not self.document.project:
                     self._frames = FrameRenderer(
                         self.document.project, self.document.resolve_asset, self._image_cache

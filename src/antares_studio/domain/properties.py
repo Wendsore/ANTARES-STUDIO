@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from antares_studio.domain.effects import EFFECTS_BY_NAME, supports_effects
 from antares_studio.domain.kinds import BASE_ANIMATABLE, check_param_value, spec_for
 from antares_studio.domain.model import Node
 
@@ -19,6 +20,8 @@ def get_property(node: Node, path: str) -> Any:
     if group == "params":
         return node.params[name]
     if group == "style":
+        if name not in node.style and name in EFFECTS_BY_NAME and supports_effects(node.kind):
+            return EFFECTS_BY_NAME[name].default  # effet jamais réglé : sa valeur neutre
         return node.style[name]
     if path in _BASE_SCALAR:
         return getattr(node, path)
@@ -78,6 +81,8 @@ def check_property_value(node: Node, path: str, value: Any) -> str | None:
     for p in specs:
         if p.name == name:
             return check_param_value(p, value)
+    if group == "style" and name in EFFECTS_BY_NAME and supports_effects(node.kind):
+        return check_param_value(EFFECTS_BY_NAME[name], value)
     return f"propriété inconnue pour {node.kind} : {path}"
 
 
@@ -87,6 +92,8 @@ def is_animatable(node: Node, path: str) -> bool:
     group, _, name = path.partition(".")
     spec = spec_for(node.kind)
     specs = spec.params if group == "params" else spec.style if group == "style" else ()
+    if group == "style" and name in EFFECTS_BY_NAME and supports_effects(node.kind):
+        return EFFECTS_BY_NAME[name].animatable
     return any(p.name == name and p.animatable for p in specs)
 
 

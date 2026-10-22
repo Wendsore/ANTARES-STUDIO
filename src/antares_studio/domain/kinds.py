@@ -297,6 +297,10 @@ def animatable_properties(kind: str) -> list[str]:
     props = list(BASE_ANIMATABLE)
     props += [f"params.{p.name}" for p in spec.params if p.animatable]
     props += [f"style.{p.name}" for p in spec.style if p.animatable]
+    from antares_studio.domain.effects import EFFECTS, supports_effects
+
+    if supports_effects(kind):
+        props += [f"style.{p.name}" for p in EFFECTS if p.animatable]
     return props
 
 
@@ -308,6 +312,10 @@ def property_label(kind: str, path: str) -> str:
     for p in spec.params if group == "params" else spec.style if group == "style" else ():
         if p.name == name:
             return p.label or p.name
+    from antares_studio.domain.effects import EFFECTS_BY_NAME
+
+    if group == "style" and name in EFFECTS_BY_NAME:
+        return EFFECTS_BY_NAME[name].label
     return path
 
 

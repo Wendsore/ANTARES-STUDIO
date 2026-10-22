@@ -42,13 +42,18 @@ FILE_FILTERS = {
     "mp4": "Vidéo MP4 (*.mp4)",
     "webm": "Vidéo WebM (*.webm)",
     "gif": "Image animée GIF (*.gif)",
+    "mov": "Vidéo QuickTime ProRes (*.mov)",
+    "png": "Dossier de la séquence d'images (*)",
+    "wav": "Son WAV (*.wav)",
+    "mp3": "Son MP3 (*.mp3)",
 }
+KNOWN_SUFFIXES = (".mp4", ".webm", ".gif", ".mov", ".wav", ".mp3")
 
 
 def with_video_suffix(path: str, suffix: str) -> str:
-    """Remplace l'extension vidéo connue (.mp4, .webm, .gif) ; les autres points du nom sont gardés."""
+    """Remplace l'extension d'export connue (.mp4, .mov, .wav…) ; les autres points du nom sont gardés."""
     low = path.lower()
-    for known in (".mp4", ".webm", ".gif"):
+    for known in KNOWN_SUFFIXES:
         if low.endswith(known):
             return path[: -len(known)] + suffix
     return path + suffix
@@ -62,7 +67,8 @@ def profile_items() -> list[tuple[str, str | None]]:
         if group is not None and prof.group != group:
             items.append(("", None))
         group = prof.group
-        items.append((f"{prof.group} · {prof.label} — {prof.width}×{prof.height}", pid))
+        size = f"{prof.width}×{prof.height}" if prof.has_video else "son seul"
+        items.append((f"{prof.group} · {prof.label} — {size}", pid))
     return items
 
 
@@ -106,6 +112,13 @@ class ExportDialog(QDialog):
         )
         self.all_scenes.toggled.connect(self._refresh_default_path)
         form.addRow("", self.all_scenes)
+        self.transparent = QCheckBox("Fond transparent (pour incruster la vidéo dans un montage)")
+        self.transparent.setObjectName("export_transparent")
+        self.transparent.setToolTip(
+            "Le fond de la scène n'est pas peint : seuls les objets restent, sur un canal alpha. "
+            "Profils ProRes 4444 et séquence PNG uniquement."
+        )
+        form.addRow("", self.transparent)
         scene = document.scene
         fps = float(document.project.canvas.fps)
         if scene is not None:
@@ -177,11 +190,34 @@ class ExportDialog(QDialog):
     def _profile_changed(self) -> None:
         prof = PROFILES[self.current_profile_id()]
         hints = []
+        self.transparent.setEnabled(prof.alpha)
+        if not prof.alpha:
+            self.transparent.setChecked(False)
+        elif prof.video_codec == "prores_ks":
+            self.transparent.setChecked(True)  # raison d'être du ProRes 4444
+        if prof.is_sequence:
+            hints.append(
+                "Un dossier d'images numérotées image_00000.png… ; la bande-son de la scène (s'il y en a) "
+                "est écrite à côté, en WAV."
+            )
+        if prof.video_codec == "prores_ks":
+            hints.append("Pour les logiciels de montage ; environ 30 Mo par seconde en 1080p.")
+        if not prof.has_video:
+            hints.append("Bande-son seule : voix, musique et bruitages mixés, sans image.")
+        if prof.height >= 2160:
+            hints.append("Rendu environ quatre fois plus long qu'en 1080p.")
+        if prof.has_audio:
+            loud = bool(self.document.project.settings.get("loudnorm", True))
+            hints.append(
+                "Volume normalisé à −14 LUFS."
+                if loud
+                else "Volume non normalisé (réglage du panneau Narration)."
+            )
         if prof.fixed_frame:
             hints.append(
                 f"Cadre imposé {prof.width}×{prof.height} : bandes noires si le projet a un autre format."
             )
-        if not prof.has_audio:
+        if not prof.has_audio and not prof.is_sequence:
             hints.append("Sans son.")
         if prof.max_fps is not None:
             hints.append(f"Cadence limitée à {prof.max_fps:g} images/s.")
@@ -192,6 +228,9 @@ class ExportDialog(QDialog):
         current = self.path_edit.text().strip()
         if Path(current).name:
             self.path_edit.setText(with_video_suffix(current, prof.suffix))
+        self.all_scenes.setEnabled(not prof.is_sequence)
+        if prof.is_sequence:
+            self.all_scenes.setChecked(False)
 
     def _refresh_default_path(self) -> None:
         self.path_edit.setText(str(self._default_path()))
@@ -231,7 +270,14 @@ class ExportDialog(QDialog):
             return out, None
         try:
             audio = audio_plans_for_scene(self.document.project, scene.id, self.document.resolve_asset)
-            plan = build_render_plan(self.document.project, scene.id, pid, str(out), audio=audio)
+            plan = build_render_plan(
+                self.document.project,
+                scene.id,
+                pid,
+                str(out),
+                audio=audio,
+                transparent=self.transparent.isChecked(),
+            )
         except (RenderError, ValueError) as exc:
             QMessageBox.warning(self, "Export", str(exc))
             return None
@@ -248,16 +294,16 @@ class ExportDialog(QDialog):
             return
         out, plan = prepared
         label = out.name + (" (toutes les scènes)" if plan is None else "")
-        self.queued_job = self.queue.submit(
-            ExportJob.from_document(
-                self.document,
-                label,
-                out,
-                plan,
-                None if plan is not None else self.current_profile_id(),
-                self.settings.ffmpeg_path(),
-            )
+        job = ExportJob.from_document(
+            self.document,
+            label,
+            out,
+            plan,
+            None if plan is not None else self.current_profile_id(),
+            self.settings.ffmpeg_path(),
         )
+        job.transparent = self.transparent.isChecked()
+        self.queued_job = self.queue.submit(job)
         self.accept()
 
     def start(self) -> None:
@@ -267,7 +313,12 @@ class ExportDialog(QDialog):
         out, plan = prepared
         whole = (self.current_profile_id(), str(out)) if plan is None else None
         self._worker = RenderWorker(
-            self.document.project, self.document.resolve_asset, plan, self.settings.ffmpeg_path(), whole
+            self.document.project,
+            self.document.resolve_asset,
+            plan,
+            self.settings.ffmpeg_path(),
+            whole,
+            transparent=self.transparent.isChecked(),
         )
         self._thread = QThread(self)
         self._worker.moveToThread(self._thread)
@@ -306,9 +357,10 @@ class ExportDialog(QDialog):
         self.render_result = result
         pr = result.probe
         self.progress.setValue(100)
+        what = f"{pr.width}×{pr.height}, {pr.nb_frames} images, " if pr.width else "bande-son, "
         self.status.setText(
-            f"Terminé en {result.elapsed_seconds:.1f} s : {pr.width}×{pr.height}, {pr.nb_frames} images, "
-            f"{pr.duration:.2f} s{', audio' if pr.has_audio else ''}.\n{result.output_path}"
+            f"Terminé en {result.elapsed_seconds:.1f} s : {what}"
+            f"{pr.duration:.2f} s{', audio' if pr.has_audio and pr.width else ''}.\n{result.output_path}"
         )
         self.settings.set_last_directory(str(result.output_path.parent))
         self.open_folder_btn.setVisible(True)

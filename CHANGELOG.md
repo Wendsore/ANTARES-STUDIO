@@ -2,6 +2,17 @@
 
 Toutes les évolutions **effectives** (pas les intentions). Format : date, lot, changements observables.
 
+## [0.1.0.dev0] — 2026-10-22 — Post-production : effets, filtres, bruitages, formats d'export
+
+- **Effets d'objet** (Bibliothèque > Effets, Inspecteur > Effets) : flou, lueur (rayon, couleur, intensité), ombre portée, luminosité, contraste, saturation ; animables ; 8 préréglages (Lueur d'étoile, Néon bleu, Ombre portée…), appliqués à la sélection en un Ctrl+Z.
+- **Filtres de scène** (Bibliothèque > Effets, Inspecteur > Filtres de la scène) : luminosité, contraste, saturation, température, sépia, vignettage, grain de film reproductible ; 8 préréglages (Cinéma, Espace profond, Chaud, Froid, Noir et blanc, Archive sépia, Vif). Identiques dans le canevas, l'image PNG et la vidéo.
+- **Animations d'effet** : Secousse, Éclat lumineux, Clignotement, Mise au point, Pulsation lumineuse.
+- **Bruitages et ambiances** (Bibliothèque > Sons) : 26 sons créés par le logiciel (transitions, interface, impacts, sciences et espace, ambiances bouclables), écoute, insertion à la tête de lecture avec le rôle « Effet » et une fiche CC0 remplie.
+- **Export** : profils **1440p** et **4K 2160p** ; **ProRes 422 HQ** et **ProRes 4444** avec **fond transparent** ; **séquence PNG** (transparence possible, bande-son WAV à côté) ; **bande-son seule** WAV ou MP3 ; **volume normalisé à −14 LUFS** (EBU R128, crêtes ≤ −1,5 dB), case « Volume normalisé » dans Narration ; option CLI `--transparent`.
+- Aide : rubriques « Effets et filtres » et « Bruitages et ambiances » ; export, Bibliothèque, Inspecteur, Narration, ligne de commande et limites mis à jour.
+- Correctif : les images envoyées à FFmpeg sont toujours converties en RGBA non prémultiplié (nécessaire pour la transparence).
+- ADR-0007.
+
 ## [0.1.0.dev0] — 2026-10-22 — Vingt-neuf améliorations (PR #12)
 
 - **Animation** : interpolation réglable par image clé (liste de la Timeline, clic droit sur un losange), **éditeur de courbe** (Bézier, préréglages) ; **repères** nommés (M, [ et ]) ; animations **calées** sur un repère, un sous-titre ou un clip audio ; **transitions** d'entrée de scène (fondus, glissements, volet) identiques à l'export ; objet **Caméra** 2D (point visé, zoom, inclinaison).

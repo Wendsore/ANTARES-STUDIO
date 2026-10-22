@@ -95,7 +95,7 @@ def test_gate5_p1_moon_phases_end_to_end(window, qtbot, tmp_path: Path) -> None:
     assert credits_scene.name == "Crédits"
     window.document.set_scene(scene.id)
     # 6. inventaire : la voix est documentée, aucun avertissement de provenance
-    window.library.tabs.setCurrentIndex(3)
+    window.library.tabs.setCurrentIndex(window.library.tabs.count() - 1)  # Ressources
     qtbot.wait(20)
     assert window.library.assets.topLevelItemCount() == 1
     assert window.library.assets.topLevelItem(0).text(1) == "complète"

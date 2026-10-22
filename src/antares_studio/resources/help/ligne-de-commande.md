@@ -17,9 +17,10 @@ antares-studio "Ma vidéo.antares"
 | `--version` | affiche la version et quitte |
 | `--selftest` | contrôle complet sans interface : modèle, sauvegarde, rendu, et export si FFmpeg est présent |
 | `--export PROJET SORTIE.mp4` | exporte la première scène, ou celle désignée par `--scene` |
-| `--profile` | identifiant d'un profil d'[export](export-video.md) : `final_1080p` (par défaut), `draft_720p`, `mobile_720p`, `youtube_1080p`, `vertical_1080x1920`, `square_1080`, `slides_4_3`, `webm_1080p`, `gif_480`, `preview_360p` |
+| `--profile` | identifiant d'un profil d'[export](export-video.md) : `final_1080p` (par défaut), `draft_720p`, `mobile_720p`, `youtube_1080p`, `vertical_1080x1920`, `square_1080`, `slides_4_3`, `webm_1080p`, `gif_480`, `preview_360p`, `final_1440p`, `final_2160p`, `prores_hq`, `prores_4444`, `png_sequence`, `audio_wav`, `audio_mp3` |
 | `--scene` | nom ou identifiant de la scène |
-| `--all-scenes` | toutes les scènes à la suite (vidéo complète) |
+| `--all-scenes` | toutes les scènes à la suite (vidéo complète) ; pas pour `png_sequence` |
+| `--transparent` | fond transparent, avec `prores_4444` ou `png_sequence` |
 | `--capture DOSSIER` | enregistre des captures des écrans principaux et `captures.txt` (écran, échelle) pour une recette visuelle |
 | *(chemin seul)* | ouvre ce projet dans l'interface |
 

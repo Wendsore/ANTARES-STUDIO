@@ -95,6 +95,14 @@ class AudioTab(QWidget):
         )
         self.ducking.toggled.connect(self._set_ducking)
         buttons.addWidget(self.ducking)
+        self.loudness = QCheckBox("Volume normalisé")
+        self.loudness.setObjectName("narration_loudness")
+        self.loudness.setToolTip(
+            "À l'export, le mixage est ramené à −14 LUFS (norme EBU R128, niveau de YouTube et Spotify), "
+            "crêtes limitées à −1,5 dB : toutes vos vidéos sonnent aussi fort, sans saturation."
+        )
+        self.loudness.toggled.connect(self._set_loudness)
+        buttons.addWidget(self.loudness)
         layout.addLayout(buttons)
         self.table = QTableWidget(0, len(self.COLS))
         self.table.setHorizontalHeaderLabels(list(self.COLS))
@@ -128,6 +136,7 @@ class AudioTab(QWidget):
             selected = self.selected_clip()
             self.table.setRowCount(0)
             self.ducking.setChecked(bool(self.document.project.settings.get("ducking", True)))
+            self.loudness.setChecked(bool(self.document.project.settings.get("loudnorm", True)))
             if scene is None:
                 return
             fps = float(self.document.project.canvas.fps)
@@ -172,6 +181,12 @@ class AudioTab(QWidget):
         # défaut = activé : la clé n'est écrite que si l'on désactive (anciens projets inchangés)
         label = "Baisser la musique sous la voix" if on else "Ne plus baisser la musique"
         self.document.push(SetProjectSetting("ducking", None if on else False, label=label))
+
+    def _set_loudness(self, on: bool) -> None:
+        if self._updating:
+            return
+        label = "Normaliser le volume" if on else "Ne plus normaliser le volume"
+        self.document.push(SetProjectSetting("loudnorm", None if on else False, label=label))
 
     def _spin(
         self, value: float, lo: float, hi: float, step: float, clip_id: str, attr: str
@@ -229,7 +244,7 @@ class AudioTab(QWidget):
             if asset is not None:
                 self.provenance_prompt(asset)
 
-    def add_audio_file(self, path: Path) -> AudioClip | None:
+    def add_audio_file(self, path: Path, name: str = "") -> AudioClip | None:
         """Importe le fichier dans ``audio/``, mesure sa durée et crée le clip à l'image courante."""
         scene = self.document.scene
         if scene is None or self.document.paths is None:
@@ -253,7 +268,7 @@ class AudioTab(QWidget):
             QMessageBox.critical(self, "Import impossible", str(exc))
             return None
         clip = AudioClip.create(
-            asset.id, path.stem, offset_frames=self.document.frame, duration_seconds=duration
+            asset.id, name or path.stem, offset_frames=self.document.frame, duration_seconds=duration
         )
         self.document.push(AddAudioClip(scene.id, clip))
         self.settings.set_last_directory(str(path.parent))

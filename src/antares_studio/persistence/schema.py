@@ -45,6 +45,8 @@ def project_to_dict(project: Project) -> dict[str, Any]:
             scene.pop("markers", None)
         if scene.get("transition") == asdict(SceneTransition()):
             scene.pop("transition", None)
+        if not scene.get("post"):
+            scene.pop("post", None)
         for clip in scene["audio"]:
             if clip.get("role") == "voice":
                 clip.pop("role", None)
@@ -117,6 +119,7 @@ def _scene_from(data: Any, path: str) -> Scene:
             for i, x in enumerate(_expect_list(d.get("markers", []), f"{path}.markers"))
         ],
         transition=_transition_from(d.get("transition", {}), f"{path}.transition"),
+        post=_expect_json_dict(d.get("post", {}), f"{path}.post"),
     )
 
 

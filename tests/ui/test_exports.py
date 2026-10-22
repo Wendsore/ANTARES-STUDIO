@@ -38,7 +38,7 @@ def _short_scene(window: MainWindow, frames: int = 12) -> None:
 
 def test_profiles_are_grouped_and_suffix_follows_the_format(window, qtbot, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
     items = profile_items()
-    assert sum(1 for _t, pid in items if pid is None) == 2  # Usage | Plateforme | Format
+    assert sum(1 for _t, pid in items if pid is None) == 4  # Usage | Plateforme | Format | Montage | Audio
     assert {pid for _t, pid in items if pid} == set(PROFILES)
     dlg = ExportDialog(window.document, window.settings, window, queue=window.export_queue)
     qtbot.addWidget(dlg)
@@ -51,6 +51,18 @@ def test_profiles_are_grouped_and_suffix_follows_the_format(window, qtbot, tmp_p
     assert dlg.path_edit.text().endswith(".mp4")
     assert with_video_suffix("a.WEBM", ".gif") == "a.gif" and with_video_suffix("a", ".mp4") == "a.mp4"
     assert not dlg.background_btn.isHidden()
+    # transparence : seulement pour les profils à canal alpha ; ProRes 4444 la coche d'office
+    assert not dlg.transparent.isEnabled()
+    dlg.profile.setCurrentIndex(dlg.profile.findData("prores_4444"))
+    assert dlg.transparent.isEnabled() and dlg.transparent.isChecked()
+    assert dlg.path_edit.text().endswith(".mov")
+    dlg.profile.setCurrentIndex(dlg.profile.findData("png_sequence"))
+    assert dlg.path_edit.text().endswith("Lune v1.2 - Orbite")  # un dossier
+    assert not dlg.all_scenes.isEnabled() and "image_00000.png" in dlg.profile_hint.text()
+    dlg.profile.setCurrentIndex(dlg.profile.findData("audio_mp3"))
+    assert dlg.path_edit.text().endswith(".mp3") and not dlg.transparent.isEnabled()
+    assert "Bande-son seule" in dlg.profile_hint.text() and "−14 LUFS" in dlg.profile_hint.text()
+    assert any(t.endswith("son seul") for t, pid in items if pid == "audio_wav")
 
 
 @pytest.mark.render

@@ -1,6 +1,9 @@
-"""Bibliothèque : objets à ajouter (double-clic) et animations prédéfinies à appliquer à la sélection."""
+"""Bibliothèque : objets à ajouter (double-clic), animations, effets et filtres, bruitages, modèles."""
 
 from __future__ import annotations
+
+import os
+from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QIcon
@@ -11,6 +14,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QPushButton,
     QTabWidget,
     QToolButton,
     QTreeWidget,
@@ -20,6 +24,8 @@ from PySide6.QtWidgets import (
 )
 
 from antares_studio.app import theme, thumbnails
+from antares_studio.audio import sfx
+from antares_studio.domain.effects import EFFECT_PRESETS, OBJECT_LOOKS, SCENE_LOOKS
 from antares_studio.domain.kinds import KINDS
 from antares_studio.resources.licenses import STATUS_COMPLETE, InventoryRow, choice_for
 from antares_studio.resources.templates import TEMPLATES
@@ -42,11 +48,35 @@ CATEGORIES: dict[str, tuple[str, ...]] = {
 }
 
 
+def sound_cache_dir() -> Path:
+    """Dossier des bruitages déjà calculés (préférences isolées pendant les tests)."""
+    folder = os.environ.get("ANTARES_SETTINGS_DIR", "").strip()
+    if folder:
+        return Path(folder) / "sons"
+    from PySide6.QtCore import QStandardPaths
+
+    base = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.CacheLocation)
+    return Path(base) / "sons"
+
+
+def _header(text: str) -> QListWidgetItem:
+    item = QListWidgetItem(text)
+    item.setFlags(Qt.ItemFlag.NoItemFlags)
+    item.setData(ID_ROLE, "")
+    f = item.font()
+    f.setBold(True)
+    item.setFont(f)
+    return item
+
+
 class LibraryDock(QWidget):
     addRequested = Signal(str)  # kind
     presetRequested = Signal(str)  # preset id
     templateRequested = Signal(str)  # template id
     assetActivated = Signal(str)  # asset id (double-clic dans l'onglet Ressources)
+    objectLookRequested = Signal(str)  # identifiant OBJECT_LOOKS, appliqué à la sélection
+    sceneLookRequested = Signal(str)  # identifiant SCENE_LOOKS, appliqué à la scène courante
+    soundRequested = Signal(str)  # identifiant de bruitage, inséré à la tête de lecture
     favoritesChanged = Signal(list)  # identifiants de favoris (persistés par la fenêtre principale)
 
     def __init__(
@@ -78,13 +108,7 @@ class LibraryDock(QWidget):
         self.objects = QListWidget()
         self.objects.setIconSize(QSize(32, 32))
         for cat, kinds in CATEGORIES.items():
-            header = QListWidgetItem(cat)
-            header.setFlags(Qt.ItemFlag.NoItemFlags)
-            header.setData(ID_ROLE, "")
-            f = header.font()
-            f.setBold(True)
-            header.setFont(f)
-            self.objects.addItem(header)
+            self.objects.addItem(_header(cat))
             for kind in kinds:
                 item = QListWidgetItem(KINDS[kind].label)
                 item.setData(ID_ROLE, kind)
@@ -110,6 +134,83 @@ class LibraryDock(QWidget):
         self.tabs.addTab(
             self._with_hint(self.presets, "Sélectionnez un objet puis double-cliquez sur une animation."),
             "Animations",
+        )
+
+        self.effects = QListWidget()
+        self.effects.setWordWrap(True)
+        self.effects.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # libellés repliés
+        groups: list[tuple[str, str, list[tuple[str, str, str]]]] = [
+            (
+                "Effets d'objet — sur la sélection",
+                "objet",
+                [(k, v[0], v[1]) for k, v in OBJECT_LOOKS.items()],
+            ),
+            (
+                "Filtres de scène — sur la scène courante",
+                "scène",
+                [(k, v[0], v[1]) for k, v in SCENE_LOOKS.items()],
+            ),
+            (
+                "Animations d'effet — sur la sélection",
+                "animation",
+                [(k, PRESETS[k].label, PRESETS[k].description) for k in EFFECT_PRESETS],
+            ),
+        ]
+        for title, prefix, entries in groups:
+            self.effects.addItem(_header(title))
+            for key, label, description in entries:
+                item = QListWidgetItem(label)
+                item.setData(ID_ROLE, f"{prefix}:{key}")
+                item.setToolTip(description)
+                self._make_favoritable(item, f"effet:{prefix}:{key}")
+                self.effects.addItem(item)
+        self.effects.itemDoubleClicked.connect(self._on_effect_activated)
+        self.effects.itemChanged.connect(self._on_item_changed)
+        self.tabs.addTab(
+            self._with_hint(
+                self.effects,
+                "Double-clic : effet sur les objets sélectionnés, ou filtre sur toute la scène. "
+                "Réglages fins : Inspecteur, sections « Effets » et « Filtres ».",
+            ),
+            "Effets",
+        )
+
+        self.sounds = QListWidget()
+        self.sounds.setWordWrap(True)
+        self.sounds.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        for cat in sfx.CATEGORIES:
+            self.sounds.addItem(_header(cat))
+            for sid, sound in sfx.SOUNDS.items():
+                if sound.category != cat:
+                    continue
+                item = QListWidgetItem(sound.label)
+                item.setData(ID_ROLE, sid)
+                item.setToolTip(sound.description + ("\nAmbiance prévue pour boucler." if sound.loop else ""))
+                self._make_favoritable(item, f"son:{sid}")
+                self.sounds.addItem(item)
+        self.sounds.itemDoubleClicked.connect(self._on_sound_activated)
+        self.sounds.itemChanged.connect(self._on_item_changed)
+        sound_box = QWidget()
+        sound_lay = QVBoxLayout(sound_box)
+        sound_lay.setContentsMargins(0, 0, 0, 0)
+        sound_lay.addWidget(self.sounds, 1)
+        buttons = QHBoxLayout()
+        self.listen_btn = QPushButton("▶ Écouter")
+        self.listen_btn.setToolTip("Écouter le son sélectionné (sans l'ajouter au projet)")
+        self.listen_btn.clicked.connect(self.preview_selected_sound)
+        self.insert_sound_btn = QPushButton("Insérer à la tête de lecture")
+        self.insert_sound_btn.clicked.connect(self._insert_selected_sound)
+        buttons.addWidget(self.listen_btn)
+        buttons.addWidget(self.insert_sound_btn, 1)
+        sound_lay.addLayout(buttons)
+        self._preview: object | None = None
+        self.tabs.addTab(
+            self._with_hint(
+                sound_box,
+                "Bruitages et ambiances créés par ANTARES Studio, libres de droits (CC0). "
+                "Double-clic : insérer à l'image courante (piste « effet »).",
+            ),
+            "Sons",
         )
 
         self.templates = QListWidget()
@@ -158,12 +259,15 @@ class LibraryDock(QWidget):
         self.favoritesChanged.emit(sorted(self._favorites))
         self._filter()
 
+    def _lists(self) -> tuple[QListWidget, ...]:
+        return (self.objects, self.presets, self.effects, self.sounds, self.templates)
+
     def favorites(self) -> list[str]:
         return sorted(self._favorites)
 
     def set_favorite(self, fav_id: str, on: bool) -> None:
         """Marque un favori par programme (identifiant « objet:kind », « animation:id », « modèle:id »)."""
-        for lst in (self.objects, self.presets, self.templates):
+        for lst in self._lists():
             for i in range(lst.count()):
                 item = lst.item(i)
                 if item.data(FAV_ROLE) == fav_id:
@@ -187,12 +291,53 @@ class LibraryDock(QWidget):
                 item.setForeground(1, theme.WARNING)
                 item.setText(1, "⚠ " + row.status)
             self.assets.addTopLevelItem(item)
-        self.tabs.setTabText(3, f"Ressources ({len(rows)})" if rows else "Ressources")
+        self.tabs.setTabText(self.tabs.count() - 1, f"Ressources ({len(rows)})" if rows else "Ressources")
 
     def _on_object_activated(self, item: QListWidgetItem) -> None:
         kind = item.data(ID_ROLE)
         if kind:
             self.addRequested.emit(str(kind))
+
+    def _on_effect_activated(self, item: QListWidgetItem) -> None:
+        key = str(item.data(ID_ROLE) or "")
+        prefix, _sep, ident = key.partition(":")
+        if prefix == "objet":
+            self.objectLookRequested.emit(ident)
+        elif prefix == "scène":
+            self.sceneLookRequested.emit(ident)
+        elif prefix == "animation":
+            self.presetRequested.emit(ident)
+
+    # --- sons ---------------------------------------------------------------
+    def selected_sound(self) -> str | None:
+        item = self.sounds.currentItem()
+        sid = item.data(ID_ROLE) if item is not None else None
+        return str(sid) if sid else None
+
+    def _on_sound_activated(self, item: QListWidgetItem) -> None:
+        sid = item.data(ID_ROLE)
+        if sid:
+            self.soundRequested.emit(str(sid))
+
+    def _insert_selected_sound(self) -> None:
+        sid = self.selected_sound()
+        if sid:
+            self.soundRequested.emit(sid)
+
+    def preview_selected_sound(self) -> Path | None:
+        """Calcule le son (une fois, puis cache) et le joue ; sans sortie audio, rien ne se passe."""
+        sid = self.selected_sound()
+        if sid is None:
+            return None
+        path = sfx.write_sound(sid, sound_cache_dir())
+        from antares_studio.app.audio_player import HAS_MULTIMEDIA, ClipPlayer
+
+        if HAS_MULTIMEDIA and os.environ.get("QT_QPA_PLATFORM") != "offscreen":
+            if isinstance(self._preview, ClipPlayer):
+                self._preview.dispose()
+            self._preview = ClipPlayer(path, 1.0, self)
+            self._preview.play_from(0.0)
+        return path
 
     def _with_hint(self, widget: QWidget, hint: str) -> QWidget:
         box = QWidget()
@@ -227,7 +372,7 @@ class LibraryDock(QWidget):
     def _filter(self) -> None:
         q = self.search.text().strip().casefold()
         fav_only = self.fav_only.isChecked()
-        for lst in (self.objects, self.presets, self.templates):
+        for lst in self._lists():
             for i in range(lst.count()):
                 item = lst.item(i)
                 is_header = not item.data(ID_ROLE)

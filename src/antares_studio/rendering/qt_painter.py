@@ -27,7 +27,9 @@ from PySide6.QtGui import (
 )
 
 from antares_studio.domain.colors import is_color, parse_color
+from antares_studio.domain.effects import has_effects, supports_effects
 from antares_studio.domain.model import DEFAULT_SUBTITLE_STYLE, Canvas
+from antares_studio.rendering.effects import paint_with_effects
 from antares_studio.rendering.formula_layout import formula_rect, paint_formula
 from antares_studio.rendering.gltf import GltfError, Mesh, load_mesh, project
 from antares_studio.science.data import DataError, DataTable, histogram, load_csv, nice_ticks
@@ -134,7 +136,15 @@ def paint_scene_state(
         # combine=True : la transformation s'ajoute à celle du painter (décalage/zoom de l'éditeur)
         painter.setWorldTransform(QTransform(a, b, c, d, tx, ty) * base, True)
         painter.setOpacity(node.world_opacity)
-        paint_node(painter, node, assets, cache)
+        if supports_effects(node.kind) and has_effects(node.style):
+            pad = float(node.style.get("stroke_width", 0.0) or 0.0) + 4.0  # contours et pointes de flèche
+            rect = local_bounds(node).adjusted(-pad, -pad, pad, pad)
+            if not paint_with_effects(
+                painter, rect, node.style, lambda p, n=node: paint_node(p, n, assets, cache)
+            ):
+                paint_node(painter, node, assets, cache)  # calque trop grand : objet sans effet
+        else:
+            paint_node(painter, node, assets, cache)
         painter.restore()
     if state.subtitle:
         paint_subtitle(
@@ -815,14 +825,24 @@ def render_state_to_image(
     assets: AssetResolver | None = None,
     image_cache: ImageCache | None = None,
     subtitle_style: dict[str, Any] | None = None,
+    paint_background: bool = True,
 ) -> QImage:
-    """Rastérise un état dans une ``QImage`` RGBA8888 (utilisé par l'export et les tests visuels)."""
+    """Rastérise un état dans une ``QImage`` RGBA8888 (utilisé par l'export et les tests visuels) ;
+    sans fond peint, l'image reste transparente là où rien n'est dessiné."""
     img = QImage(width, height, QImage.Format.Format_RGBA8888)
     img.fill(0)
     painter = QPainter(img)
     try:
         paint_scene_state(
-            painter, state, canvas, width, height, assets, image_cache, subtitle_style=subtitle_style
+            painter,
+            state,
+            canvas,
+            width,
+            height,
+            assets,
+            image_cache,
+            paint_background=paint_background,
+            subtitle_style=subtitle_style,
         )
     finally:
         painter.end()

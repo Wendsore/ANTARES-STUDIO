@@ -186,6 +186,7 @@ class Scene:
     subtitles: list[Subtitle] = field(default_factory=list)
     markers: list[Marker] = field(default_factory=list)
     transition: SceneTransition = field(default_factory=SceneTransition)
+    post: dict[str, Any] = field(default_factory=dict)  # filtres d'image (``domain.effects.SCENE_POST``)
 
     @classmethod
     def create(cls, name: str, duration_frames: int = 300, **kwargs: Any) -> Scene:

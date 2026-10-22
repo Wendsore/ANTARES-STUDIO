@@ -46,7 +46,7 @@ Paquet Windows (phase 9, en cours) : `pip install pyinstaller==6.22.3` puis `pyt
 
 Voir [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) (vérité sur les phases), [`CHANGELOG.md`](CHANGELOG.md), les ADR dans [`docs/adr/`](docs/adr/) et le guide [`docs/user-guide/01-premiere-video.md`](docs/user-guide/01-premiere-video.md).
 
-Dans le logiciel : **Aide > Centre d'aide** (F1, 33 rubriques en français, recherche, aide contextuelle), **Aide > Tutoriels** (7 parcours guidés validés automatiquement sur vos actions), **Ctrl+K** pour retrouver n'importe quelle commande, thème sombre ou clair et taille du texte dans **Affichage**. Pour démarrer vite : **Fichier > Exemples** ouvre une vidéo complète à modifier.
+Dans le logiciel : **Aide > Centre d'aide** (F1, 35 rubriques en français, recherche, aide contextuelle), **Aide > Tutoriels** (7 parcours guidés validés automatiquement sur vos actions), **Ctrl+K** pour retrouver n'importe quelle commande, thème sombre ou clair et taille du texte dans **Affichage**. Pour démarrer vite : **Fichier > Exemples** ouvre une vidéo complète à modifier. Post-production : onglets **Effets** (lueur, ombre, flou, filtres de scène) et **Sons** (26 bruitages et ambiances libres de droits) de la Bibliothèque ; export jusqu'en 4K, ProRes (avec transparence), séquence PNG, bande-son seule, volume normalisé à −14 LUFS.
 
 ## Lancer l'application
 

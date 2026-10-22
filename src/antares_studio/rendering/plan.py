@@ -32,16 +32,40 @@ class RenderProfile:
     max_fps: float | None = None  # GIF : images sautées pour rester sous cette cadence
     extension: str = ""  # extension du fichier (par défaut : celle du conteneur)
     group: str = "Usage"
+    alpha: bool = False  # transparence possible (ProRes 4444, séquence PNG)
+    prores_profile: str = ""  # ProRes : « 3 » (422 HQ) ou « 4 » (4444)
 
     @property
     def has_audio(self) -> bool:
-        return self.container != "gif"
+        return self.container not in ("gif", "png")
+
+    @property
+    def has_video(self) -> bool:
+        return self.container not in AUDIO_CONTAINERS
+
+    @property
+    def is_sequence(self) -> bool:
+        """Séquence d'images : un dossier de PNG numérotés au lieu d'un fichier vidéo."""
+        return self.container == "png"
 
     @property
     def suffix(self) -> str:
+        if self.is_sequence:
+            return ""  # un dossier
         return "." + (self.extension or self.container)
 
-    def ffmpeg_video_args(self) -> list[str]:
+    def ffmpeg_audio_args(self) -> list[str]:
+        args = ["-c:a", self.audio_codec]
+        if not self.audio_codec.startswith("pcm_"):
+            args += ["-b:a", self.audio_bitrate]
+        return args
+
+    def ffmpeg_video_args(self, transparent: bool = False) -> list[str]:
+        if self.video_codec == "prores_ks":
+            args = ["-c:v", "prores_ks", "-profile:v", self.prores_profile, "-vendor", "apl0"]
+            if self.alpha and transparent:
+                return [*args, "-pix_fmt", "yuva444p10le", "-alpha_bits", "16"]
+            return [*args, "-pix_fmt", self.pixel_format]
         if self.container == "gif":
             # palette optimisée pour chaque fichier : couleurs fidèles sans tramage grossier
             return [
@@ -82,11 +106,17 @@ class RenderProfile:
         return args
 
 
+AUDIO_CONTAINERS = ("wav", "mp3")
+
 PROFILES: dict[str, RenderProfile] = {
     p.id: p
     for p in (
         RenderProfile("draft_720p", "Brouillon 720p (rapide)", 1280, 720, crf=28, preset="veryfast"),
         RenderProfile("final_1080p", "Final 1080p (qualité)", 1920, 1080, crf=18, preset="medium"),
+        RenderProfile("final_1440p", "Final 1440p (QHD)", 2560, 1440, crf=18, preset="medium"),
+        RenderProfile(
+            "final_2160p", "Final 4K UHD 2160p (long à rendre)", 3840, 2160, crf=18, preset="medium"
+        ),
         RenderProfile("mobile_720p", "Mobile 720p (fichier léger)", 1280, 720, crf=26, preset="slow"),
         RenderProfile("preview_360p", "Aperçu rapide 360p", 640, 360, crf=30, preset="ultrafast"),
         RenderProfile(
@@ -127,6 +157,62 @@ PROFILES: dict[str, RenderProfile] = {
             max_fps=15.0,
             group="Format",
         ),
+        RenderProfile(
+            "prores_hq",
+            "ProRes 422 HQ (montage, fichier lourd)",
+            1920,
+            1080,
+            video_codec="prores_ks",
+            prores_profile="3",
+            pixel_format="yuv422p10le",
+            audio_codec="pcm_s16le",
+            container="mov",
+            group="Montage",
+        ),
+        RenderProfile(
+            "prores_4444",
+            "ProRes 4444 avec transparence (incrustation)",
+            1920,
+            1080,
+            video_codec="prores_ks",
+            prores_profile="4",
+            pixel_format="yuv444p10le",
+            audio_codec="pcm_s16le",
+            container="mov",
+            alpha=True,
+            group="Montage",
+        ),
+        RenderProfile(
+            "png_sequence",
+            "Séquence d'images PNG (dossier, sans son)",
+            1920,
+            1080,
+            video_codec="png",
+            container="png",
+            alpha=True,
+            group="Montage",
+        ),
+        RenderProfile(
+            "audio_wav",
+            "Bande-son seule WAV (sans perte)",
+            0,
+            0,
+            video_codec="",
+            audio_codec="pcm_s16le",
+            container="wav",
+            group="Audio",
+        ),
+        RenderProfile(
+            "audio_mp3",
+            "Bande-son seule MP3 (192 kb/s)",
+            0,
+            0,
+            video_codec="",
+            audio_codec="libmp3lame",
+            audio_bitrate="192k",
+            container="mp3",
+            group="Audio",
+        ),
     )
 }
 
@@ -166,6 +252,8 @@ class RenderPlan:
     content_rect: tuple[int, int, int, int] | None = None  # image utile dans le cadre (bandes noires)
     frame_step: int = 1  # 1 image sur N (GIF : cadence réduite)
     ducking: bool = True  # musique atténuée pendant la voix (si les deux sont présents)
+    loudness: bool = True  # volume normalisé (EBU R128, −14 LUFS, crêtes ≤ −1,5 dBTP)
+    transparent: bool = False  # fond de scène non peint (profils à canal alpha uniquement)
 
     @property
     def source_frames(self) -> int:
@@ -203,7 +291,7 @@ def output_size(profile: RenderProfile, canvas: Canvas) -> tuple[int, int]:
     plus étiré dans un cadre 16:9. Dimensions paires (exigence de H.264 en 4:2:0). Un profil de
     plateforme (``fixed_frame``) impose son cadre : voir ``content_rect``.
     """
-    if profile.fixed_frame:
+    if profile.fixed_frame or not profile.has_video:
         return profile.width, profile.height
     short = min(profile.width, profile.height)
     cw, ch = canvas.width, canvas.height
@@ -247,6 +335,7 @@ def build_render_plan(
     subtitles_path: str | None = None,
     tool_versions: dict[str, str] | None = None,
     silent_audio: bool = False,
+    transparent: bool = False,
 ) -> RenderPlan:
     scene = project.scene(scene_id)
     profile = PROFILES[profile_id]
@@ -271,6 +360,10 @@ def build_render_plan(
         fps = float(project.canvas.fps)
         while fps / step > profile.max_fps:
             step += 1
+    if transparent and not profile.alpha:
+        raise ValueError(f"le profil « {profile.label} » ne gère pas la transparence")
+    if not profile.has_video:
+        silent_audio = True  # bande-son seule : du silence plutôt qu'un fichier vide
     warnings.extend(provenance_warnings(project, scene_id))
     warnings.extend(subtitle_warnings(project, scene_id))
     return RenderPlan(
@@ -293,6 +386,8 @@ def build_render_plan(
         frame_step=step,
         audio=audio if profile.has_audio else (),
         ducking=bool(project.settings.get("ducking", True)),
+        loudness=bool(project.settings.get("loudnorm", True)),
+        transparent=transparent,
     )
 
 
