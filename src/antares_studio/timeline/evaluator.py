@@ -76,6 +76,7 @@ class SceneState:
     subtitle: str | None = None  # texte du sous-titre actif, incrusté par le même painter que les objets
     camera: Affine = IDENTITY  # scène -> image (déjà composée dans ``world`` de chaque objet)
     camera_id: str | None = None  # caméra appliquée (None : cadre fixe)
+    backdrop: str = ""  # décor procédural de la scène (peint avec le fond)
 
     def node(self, node_id: str) -> NodeState:
         for n in self.nodes:
@@ -249,6 +250,7 @@ def evaluate_scene(scene: Scene, frame: int, canvas: Canvas | None = None) -> Sc
         subtitle=sub.text if sub is not None else None,
         camera=camera,
         camera_id=camera_id,
+        backdrop=scene.backdrop,
     )
 
 

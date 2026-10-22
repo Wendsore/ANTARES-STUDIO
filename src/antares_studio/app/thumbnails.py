@@ -11,13 +11,13 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon, QImage, QPainter, QPixmap
 
 from antares_studio.app import icons
-from antares_studio.domain.kinds import spec_for
+from antares_studio.domain.kinds import resolve_variant, spec_for
 from antares_studio.domain.model import Canvas, Node, Project, Scene
 from antares_studio.rendering.qt_painter import local_bounds, paint_scene_state, render_state_to_image
 from antares_studio.resources.templates import TEMPLATES, create_project
 from antares_studio.timeline.evaluator import evaluate
 
-RENDERED_KINDS = ("circle", "ellipse", "rect", "polygon", "star", "line", "arrow", "orbit_path")
+RENDERED_KINDS = ("circle", "ellipse", "rect", "polygon", "star", "line", "arrow", "orbit_path", "solid3d")
 KIND_ICONS: dict[str, str] = {
     "text": "type",
     "callout": "message-square-text",
@@ -28,6 +28,7 @@ KIND_ICONS: dict[str, str] = {
     "group": "group",
     "camera": "video",
     "model3d": "rotate-3d",
+    "grid": "grid-3x3",
 }
 PRESET_ICONS: dict[str, str] = {
     "appear": "eye",
@@ -39,14 +40,21 @@ PRESET_ICONS: dict[str, str] = {
     "trace": "chart-spline",
     "kepler": "orbit",
     "morph": "blend",
+    "write": "type",
+    "erase": "undo-2",
+    "spin3d": "rotate-3d",
+    "linear_map": "scale-3d",
+    "warp": "magnet",
+    "wave_travel": "activity",
 }
 _kind_cache: dict[tuple[str, int, str], QIcon] = {}
 _template_cache: dict[tuple[str, int, int], QPixmap] = {}
 
 
-def _single_node_project(kind: str) -> tuple[Project, Scene, Node]:
+def _single_node_project(ident: str) -> tuple[Project, Scene, Node]:
+    kind, label, variant = resolve_variant(ident)
     spec = spec_for(kind)
-    node = Node.create(kind, spec.label, style=spec.default_style(), params=spec.default_params())
+    node = Node.create(kind, label, style=spec.default_style(), params={**spec.default_params(), **variant})
     if kind == "orbit_path":
         node.style["stroke"] = "#CFD8DC"
         node.style["stroke_width"] = 6.0
@@ -62,8 +70,9 @@ def kind_image(kind: str, size: int = 40) -> QImage:
     """Rendu réel d'un objet ``kind`` avec ses valeurs par défaut, centré et mis à l'échelle."""
     img = QImage(size, size, QImage.Format.Format_ARGB32_Premultiplied)
     img.fill(Qt.GlobalColor.transparent)
-    if kind not in RENDERED_KINDS:
-        return icons.render_svg(KIND_ICONS.get(kind, "square"), size)
+    base = resolve_variant(kind)[0]
+    if base not in RENDERED_KINDS:
+        return icons.render_svg(KIND_ICONS.get(base, "square"), size)
     project, scene, node = _single_node_project(kind)
     state = evaluate(project, scene.id, 0)
     bounds = local_bounds(state.nodes[0])

@@ -28,6 +28,7 @@ EFFECTS: tuple[ParamSpec, ...] = (
     ParamSpec("fx_brightness", "float", 0.0, True, "Luminosité (−1 → 1)", min=-1, max=1),
     ParamSpec("fx_contrast", "float", 1.0, True, "Contraste (1 = inchangé)", min=0, max=3),
     ParamSpec("fx_saturation", "float", 1.0, True, "Saturation (0 = noir et blanc)", min=0, max=3),
+    ParamSpec("fx_chalk", "float", 0.0, True, "Texture craie (0 → 1)", min=0, max=1),
 )
 EFFECTS_BY_NAME: dict[str, ParamSpec] = {p.name: p for p in EFFECTS}
 
@@ -50,6 +51,7 @@ def has_effects(style: dict[str, Any]) -> bool:
         or abs(float(v["fx_brightness"])) > 1e-6
         or abs(float(v["fx_contrast"]) - 1.0) > 1e-6
         or abs(float(v["fx_saturation"]) - 1.0) > 1e-6
+        or float(v["fx_chalk"]) > 0.0
     )
 
 
@@ -85,6 +87,11 @@ OBJECT_LOOKS: dict[str, tuple[str, str, dict[str, Any]]] = {
         "Couleurs vives",
         "Saturation et contraste renforcés.",
         {"fx_saturation": 1.5, "fx_contrast": 1.15},
+    ),
+    "chalk": (
+        "Craie",
+        "Grain de craie sur le tableau : traits irréguliers, poudre qui accroche. Texte, formule, tracé.",
+        {"fx_chalk": 0.65},
     ),
     "no_effect": ("Retirer les effets", "Remet tous les effets de l'objet à zéro.", {}),
 }

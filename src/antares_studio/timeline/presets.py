@@ -113,7 +113,8 @@ PRESETS: dict[str, PresetSpec] = {
         PresetSpec(
             "trace",
             "Tracer la courbe",
-            "Dessine progressivement la courbe d'un graphique (progression 0 → 1).",
+            "Dessine progressivement la courbe d'un graphique ou les lignes d'une grille "
+            "(progression 0 → 1).",
             _COMMON + (_EASING,),
         ),
         PresetSpec(
@@ -122,6 +123,74 @@ PRESETS: dict[str, PresetSpec] = {
             "Passe d'une équation à la formule cible (paramètre « Transformer en ») : les symboles communs "
             "glissent vers leur nouvelle place, les autres apparaissent en fondu.",
             _COMMON + (_EASING,),
+        ),
+        PresetSpec(
+            "write",
+            "Écrire",
+            "Le texte ou l'équation s'écrit sous vos yeux, lettre après lettre. La façon d'écrire (tracé "
+            "3Blue1Brown, craie, machine à écrire, fondu) se choisit dans l'Inspecteur.",
+            _COMMON[:1]
+            + (
+                PresetParam("duration_frames", "Durée (images)", "int", 75, min=1),
+                PresetParam(
+                    "easing",
+                    "Interpolation",
+                    "choice",
+                    "linear",
+                    choices=("linear", "ease_in", "ease_out", "ease_in_out"),
+                ),
+            ),
+        ),
+        PresetSpec(
+            "erase",
+            "Effacer l'écriture",
+            "L'écriture se défait en sens inverse, de la dernière lettre à la première.",
+            _COMMON[:1] + (PresetParam("duration_frames", "Durée (images)", "int", 30, min=1), _EASING),
+        ),
+        PresetSpec(
+            "spin3d",
+            "Rotation 3D",
+            "Le solide ou le modèle 3D tourne sur lui-même (axe vertical) en s'inclinant éventuellement.",
+            _COMMON
+            + (
+                PresetParam("turns", "Nombre de tours", "float", 1.0),
+                PresetParam("tilt_deg", "Inclinaison ajoutée (°)", "float", 0.0, min=-180, max=180),
+                PresetParam(
+                    "easing",
+                    "Interpolation",
+                    "choice",
+                    "linear",
+                    choices=("linear", "ease_in", "ease_out", "ease_in_out"),
+                ),
+            ),
+        ),
+        PresetSpec(
+            "linear_map",
+            "Transformation linéaire",
+            "La grille se transforme sous l'effet d'une matrice [[a, b], [c, d]] : les colonnes sont les "
+            "images des vecteurs î et ĵ (« Essence of linear algebra », 3Blue1Brown).",
+            _COMMON
+            + (
+                PresetParam("a", "a (î en x)", "float", 1.0, min=-20, max=20),
+                PresetParam("b", "b (ĵ en x)", "float", 1.0, min=-20, max=20),
+                PresetParam("c", "c (î en y)", "float", 0.0, min=-20, max=20),
+                PresetParam("d", "d (ĵ en y)", "float", 1.0, min=-20, max=20),
+                _EASING,
+            ),
+        ),
+        PresetSpec(
+            "warp",
+            "Courber l'espace",
+            "La grille se creuse, ondule ou tourbillonne jusqu'à l'intensité voulue. Choisissez d'abord la "
+            "déformation (puits de gravité, onde, tourbillon) dans l'Inspecteur.",
+            _COMMON + (PresetParam("amount", "Intensité finale", "float", 1.0, min=-3, max=3), _EASING),
+        ),
+        PresetSpec(
+            "wave_travel",
+            "Onde qui se propage",
+            "Les rides de la déformation « Onde » s'éloignent du centre (ondes gravitationnelles, ronds "
+            "dans l'eau).",
+            _COMMON + (PresetParam("cycles", "Nombre de rides émises", "float", 3.0, min=0.1),),
         ),
         PresetSpec(
             "shake",
@@ -276,6 +345,41 @@ def apply_preset(preset_id: str, node: Node, params: dict[str, Any] | None = Non
         t = Track(node.id, "params.morph")
         t.set_keyframe(start, 0.0, easing)
         t.set_keyframe(end, 1.0, easing)
+        tracks.append(t)
+    elif preset_id in ("write", "erase"):
+        a, b = (0.0, 1.0) if preset_id == "write" else (1.0, 0.0)
+        t = Track(node.id, "params.write")
+        t.set_keyframe(start, a, easing)
+        t.set_keyframe(end, b, easing)
+        tracks.append(t)
+    elif preset_id == "spin3d":
+        yaw0 = float(node.params.get("yaw_deg", 0.0))
+        pitch0 = float(node.params.get("pitch_deg", 0.0))
+        yaw = Track(node.id, "params.yaw_deg")
+        yaw.set_keyframe(start, yaw0, easing)
+        yaw.set_keyframe(end, yaw0 + 360.0 * float(p["turns"]), easing)
+        tracks.append(yaw)
+        if float(p["tilt_deg"]) != 0.0:
+            pitch = Track(node.id, "params.pitch_deg")
+            pitch.set_keyframe(start, pitch0, easing)
+            pitch.set_keyframe(end, pitch0 + float(p["tilt_deg"]), easing)
+            tracks.append(pitch)
+    elif preset_id == "linear_map":
+        for name, default in (("a", 1.0), ("b", 0.0), ("c", 0.0), ("d", 1.0)):
+            t = Track(node.id, f"params.m_{name}")
+            t.set_keyframe(start, float(node.params.get(f"m_{name}", default)), easing)
+            t.set_keyframe(end, float(p[name]), easing)
+            tracks.append(t)
+    elif preset_id == "warp":
+        t = Track(node.id, "params.warp_amount")
+        t.set_keyframe(start, float(node.params.get("warp_amount", 0.0)), easing)
+        t.set_keyframe(end, float(p["amount"]), easing)
+        tracks.append(t)
+    elif preset_id == "wave_travel":
+        phase0 = float(node.params.get("warp_phase", 0.0))
+        t = Track(node.id, "params.warp_phase")
+        t.set_keyframe(start, phase0, "linear")
+        t.set_keyframe(end, phase0 + float(p["cycles"]), "linear")
         tracks.append(t)
     elif preset_id == "kepler":
         tracks += _kepler_tracks(node, p, start, dur)

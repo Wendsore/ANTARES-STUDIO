@@ -9,7 +9,7 @@ from antares_studio.domain.colors import is_color
 from antares_studio.domain.effects import EFFECTS_BY_NAME, SCENE_POST_BY_NAME
 from antares_studio.domain.ids import is_valid_id
 from antares_studio.domain.kinds import KINDS, check_param_value, spec_for
-from antares_studio.domain.model import AUDIO_ROLES, EASINGS, TRANSITIONS, Project, Scene
+from antares_studio.domain.model import AUDIO_ROLES, BACKDROPS, EASINGS, TRANSITIONS, Project, Scene
 from antares_studio.domain.properties import check_property_value, is_animatable
 
 
@@ -61,6 +61,8 @@ def validate_scene(scene: Scene, prefix: str = "scene") -> list[ValidationIssue]
         issues.append(ValidationIssue(f"{prefix}.duration_frames", "durée hors bornes"))
     if not is_color(scene.background):
         issues.append(ValidationIssue(f"{prefix}.background", "couleur invalide"))
+    if scene.backdrop not in BACKDROPS:
+        issues.append(ValidationIssue(f"{prefix}.backdrop", f"décor inconnu : {scene.backdrop}"))
     ids: dict[str, int] = {}
     for ni, node in enumerate(scene.nodes):
         p = f"{prefix}.nodes[{ni}]"

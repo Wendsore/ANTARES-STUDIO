@@ -8,6 +8,7 @@ from typing import Any
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QFont, QFontMetricsF, QPainter, QPen
 
+from antares_studio.rendering.writing import formula_units, is_partial, paint_units, write_amount
 from antares_studio.science.formula import Node, parse_formula
 
 SCRIPT_SCALE = 0.65
@@ -242,6 +243,9 @@ def _morph_amount(params: dict[str, Any]) -> float:
 
 
 def formula_font(params: dict[str, Any]) -> QFont:
+    from antares_studio.resources.fonts import ensure_fonts
+
+    ensure_fonts()
     font = QFont(str(params.get("font_family", "DejaVu Sans")))
     font.setPointSizeF(max(1.0, float(params.get("font_size", 56.0))))
     return font
@@ -284,6 +288,17 @@ def paint_formula(painter: QPainter, params: dict[str, Any], color_pen: QPen, ba
     painter.setBrush(Qt.BrushStyle.NoBrush)
     if 0.0 < u < 1.0:
         _paint_morph(painter, params, u)
+        return
+    if u <= 0.0 and is_partial(params):  # écriture progressive de la formule de départ
+        glyphs, strokes = layout_glyphs(params, text)
+        paint_units(
+            painter,
+            formula_units(glyphs, strokes),
+            write_amount(params),
+            str(params.get("write_style", "trace")),
+            color_pen.color(),
+            QFontMetricsF(formula_font(params)).height(),
+        )
         return
     formula = parse_formula(text)
     renderer = FormulaRenderer(formula_font(params), bool(params.get("italic", True)))

@@ -29,9 +29,13 @@ from PySide6.QtGui import (
 from antares_studio.domain.colors import is_color, parse_color
 from antares_studio.domain.effects import has_effects, supports_effects
 from antares_studio.domain.model import DEFAULT_SUBTITLE_STYLE, Canvas
+from antares_studio.rendering.backdrops import paint_backdrop
 from antares_studio.rendering.effects import paint_with_effects
 from antares_studio.rendering.formula_layout import formula_rect, paint_formula
 from antares_studio.rendering.gltf import GltfError, Mesh, load_mesh, project
+from antares_studio.rendering.grid import grid_rect, paint_grid
+from antares_studio.rendering.solids import paint_solid
+from antares_studio.rendering.writing import is_partial, paint_units, text_units, write_amount
 from antares_studio.science.data import DataError, DataTable, histogram, load_csv, nice_ticks
 from antares_studio.timeline.evaluator import NodeState, SceneState
 
@@ -124,6 +128,8 @@ def paint_scene_state(
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
     if paint_background:
         painter.fillRect(QRectF(0, 0, target_width, target_height), qcolor(state.background, "#000000"))
+        if state.backdrop:
+            paint_backdrop(painter, state.backdrop, target_width, target_height)
     sx = target_width / canvas.width
     sy = target_height / canvas.height
     base = QTransform.fromScale(sx, sy)
@@ -354,6 +360,9 @@ def _draw_orbit_path(
 
 
 def text_font(params: dict[str, Any]) -> QFont:
+    from antares_studio.resources.fonts import ensure_fonts
+
+    ensure_fonts()
     font = QFont(str(params.get("font_family", "DejaVu Sans")))
     font.setPointSizeF(max(1.0, float(params.get("font_size", 48.0))))
     font.setBold(bool(params.get("bold", False)))
@@ -388,6 +397,19 @@ def _draw_text(painter: QPainter, node: NodeState, assets: AssetResolver | None,
     font = text_font(node.params)
     rect, flags = text_layout_rect(node.params)
     stroke_w = float(node.style.get("stroke_width", 0.0) or 0.0)
+    if is_partial(node.params):
+        units = text_units(text, font, rect, flags, float(node.params.get("max_width", 0.0) or 0.0))
+        outline = (qcolor(node.style.get("stroke", "#000000")), stroke_w) if stroke_w > 0 else None
+        paint_units(
+            painter,
+            units,
+            write_amount(node.params),
+            str(node.params.get("write_style", "trace")),
+            qcolor(node.style.get("fill", "#FFFFFF")),
+            QFontMetricsF(font).height(),
+            outline,
+        )
+        return
     if stroke_w > 0:
         path = QPainterPath()
         fm = QFontMetricsF(font)
@@ -734,6 +756,16 @@ def _draw_model3d(
     painter.restore()
 
 
+def _draw_grid(painter: QPainter, node: NodeState, assets: AssetResolver | None, cache: ImageCache) -> None:
+    paint_grid(painter, node.params, node.style, qcolor)
+
+
+def _draw_solid3d(
+    painter: QPainter, node: NodeState, assets: AssetResolver | None, cache: ImageCache
+) -> None:
+    paint_solid(painter, node.params, node.style, qcolor)
+
+
 def _draw_group(painter: QPainter, node: NodeState, assets: AssetResolver | None, cache: ImageCache) -> None:
     return None
 
@@ -754,6 +786,8 @@ _DRAWERS: dict[str, Callable[[QPainter, NodeState, AssetResolver | None, ImageCa
     "image_sequence": _draw_image_sequence,
     "image": _draw_image,
     "model3d": _draw_model3d,
+    "grid": _draw_grid,
+    "solid3d": _draw_solid3d,
     "group": _draw_group,
 }
 
@@ -806,9 +840,13 @@ def local_bounds(node: NodeState) -> QRectF:
         w = float(p.get("width", 400.0))
         h = float(p.get("height", 0.0) or 0.0) or w
         return QRectF(-w / 2, -h / 2, w, h)
-    if k == "model3d":
-        s = float(p.get("size", 400.0))
+    if k in ("model3d", "solid3d"):
+        s = float(p.get("size", 400.0 if k == "model3d" else 300.0))
+        if k == "solid3d" and float(p.get("perspective", 0.0) or 0.0) > 0:
+            s *= 1.6  # la face avant grossit en perspective
         return QRectF(-s / 2, -s / 2, s, s)
+    if k == "grid":
+        return grid_rect(p)
     if k == "camera":  # cadre filmé, dans le repère de la scène
         zoom = max(0.05, float(p.get("zoom", 1.0)))
         w = float(p.get("view_width", 1920.0)) / zoom

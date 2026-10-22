@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from antares_studio.domain.kinds import spec_for
-from antares_studio.domain.model import Canvas, Node, Project, Scene
+from antares_studio.domain.model import Canvas, Node, Project, Scene, Track
 from antares_studio.science.nbody import Body
 from antares_studio.timeline.presets import apply_preset
 
@@ -472,6 +472,199 @@ def build_binary_star(project: Project, scene: Scene) -> None:
     )
 
 
+def build_chalkboard(project: Project, scene: Scene) -> None:
+    """Tableau noir : titre, figure et formule écrits à la craie (théorème de Pythagore)."""
+    c = project.canvas
+    k = _scale(c)
+    cx, cy = c.width / 2, c.height / 2
+    scene.background = "#1D2120"
+    scene.backdrop = "chalkboard_black"
+    chalk = {"style_fx_chalk": 0.6, "write": 0.0, "write_style": "chalk"}
+    title = new_node(
+        "text",
+        "Titre",
+        cx,
+        130 * k,
+        text="Le théorème de Pythagore",
+        font_size=64 * k,
+        **chalk,
+        font_family="Fredericka the Great",
+        style_fill="#F4F1E8",
+    )
+    a, b = 420 * k, 300 * k
+    tri = new_node(
+        "polygon",
+        "Triangle rectangle",
+        cx - 420 * k,
+        cy + 40 * k,
+        points=[[-a / 2, b / 2], [a / 2, b / 2], [-a / 2, -b / 2]],
+        style_fill="#00000000",
+        style_stroke="#F4F1E8",
+        style_stroke_width=5 * k,
+        style_fx_chalk=0.6,
+    )
+    labels = [
+        ("Côté a", cx - 420 * k, cy + 40 * k + b / 2 + 40 * k, "a"),
+        ("Côté b", cx - 420 * k - a / 2 - 36 * k, cy + 40 * k, "b"),
+        ("Côté c", cx - 420 * k + 30 * k, cy + 10 * k, "c"),
+    ]
+    marks = [
+        new_node(
+            "text", name, x, y, text=t, font_size=48 * k, font_family="Kalam", style_fill="#9ED4F2", **chalk
+        )
+        for name, x, y, t in labels
+    ]
+    formula = new_node(
+        "formula",
+        "Relation",
+        cx + 380 * k,
+        cy - 20 * k,
+        text="a^{2} + b^{2} = c^{2}",
+        font_size=84 * k,
+        font_family="Kalam",
+        style_fill="#F6E27F",
+        **chalk,
+    )
+    note = new_node(
+        "text",
+        "Condition",
+        cx + 380 * k,
+        cy + 120 * k,
+        text="dans tout triangle rectangle",
+        font_size=40 * k,
+        font_family="Kalam",
+        style_fill="#F4F1E8",
+        **chalk,
+    )
+    scene.nodes += [title, tri, *marks, formula, note]
+    d = scene.duration_frames
+    scene.tracks += apply_preset("write", title, {"duration_frames": max(1, d // 6)})
+    scene.tracks += apply_preset("appear", tri, {"start_frame": d // 6, "duration_frames": max(1, d // 10)})
+    for i, m in enumerate(marks):
+        scene.tracks += apply_preset("write", m, {"start_frame": d // 4 + i * d // 30, "duration_frames": 10})
+    scene.tracks += apply_preset(
+        "write", formula, {"start_frame": d * 2 // 5, "duration_frames": max(1, d // 5)}
+    )
+    scene.tracks += apply_preset(
+        "write", note, {"start_frame": d * 3 // 5, "duration_frames": max(1, d // 6)}
+    )
+
+
+def build_linear_map(project: Project, scene: Scene) -> None:
+    """Transformation linéaire d'un plan quadrillé (cisaillement), vecteurs de base î et ĵ."""
+    c = project.canvas
+    k = _scale(c)
+    scene.background = "#0B1020"
+    grid = new_node(
+        "grid",
+        "Plan",
+        c.width / 2,
+        c.height / 2,
+        width=float(c.width),
+        height=float(c.height),
+        step=110 * k,
+        show_basis=True,
+        progress=0.0,
+    )
+    caption = new_node(
+        "callout",
+        "Matrice",
+        c.width / 2,
+        80 * k,
+        text="Cisaillement : î → (1, 0) ; ĵ → (1, 1)",
+        font_size=34 * k,
+        padding=14 * k,
+    )
+    scene.nodes += [grid, caption]
+    d = scene.duration_frames
+    scene.tracks += apply_preset("trace", grid, {"duration_frames": max(1, d // 4), "easing": "ease_out"})
+    scene.tracks += apply_preset(
+        "appear", caption, {"start_frame": d // 4, "duration_frames": max(1, d // 10)}
+    )
+    scene.tracks += apply_preset(
+        "linear_map",
+        grid,
+        {
+            "start_frame": d * 2 // 5,
+            "duration_frames": max(1, d * 2 // 5),
+            "a": 1.0,
+            "b": 1.0,
+            "c": 0.0,
+            "d": 1.0,
+        },
+    )
+
+
+def build_curved_spacetime(project: Project, scene: Scene) -> None:
+    """Nappe d'espace-temps creusée par une masse (analogie pédagogique de la relativité générale)."""
+    import numpy as np
+
+    from antares_studio.rendering.grid import project as project_grid
+    from antares_studio.rendering.grid import transform
+    from antares_studio.timeline.evaluator import sample_track
+
+    c = project.canvas
+    k = _scale(c)
+    scene.background = "#05070F"
+    scene.backdrop = "starfield"
+    gx, gy = c.width / 2, c.height * 0.42  # le creux reste au-dessus de la légende
+    grid = new_node(
+        "grid",
+        "Espace-temps",
+        gx,
+        gy,
+        width=1600 * k,
+        height=1400 * k,
+        step=70 * k,
+        perspective=True,
+        tilt_deg=65.0,
+        warp="gravity",
+        warp_amount=0.0,
+        warp_radius=180 * k,
+        show_axes=False,
+        style_stroke="#4FC3F7",
+    )
+    sun = new_node("circle", "Masse", gx, gy, radius=46 * k, style_fill="#FFD27A")
+    sun.style.update({"fx_glow": 40.0 * k, "fx_glow_color": "#FFB74D", "fx_glow_strength": 1.6})
+    caption = scale_warning_node(c, "Analogie : la nappe figure la courbure, pas la géométrie réelle")
+    scene.nodes += [grid, sun, caption]
+    d = scene.duration_frames
+    start, dur = d // 6, max(2, d // 2)
+    warp = apply_preset("warp", grid, {"start_frame": start, "duration_frames": dur, "amount": 1.0})
+    scene.tracks += warp
+    # la masse descend au fond du creux : position calculée par la géométrie même de la grille
+    track = Track(sun.id, "position.y")
+    for f in range(start, start + dur + 1, max(1, dur // 12)):
+        value = sample_track(warp[0], f)
+        amount = float(value) if isinstance(value, int | float) else 0.0
+        params = {**grid.params, "warp_amount": amount}
+        q, z = transform(params, np.zeros((1, 2)))
+        depth = float(project_grid(params, q, z)[0][1])
+        track.set_keyframe(f, gy + depth - 30 * k * min(1.0, amount), "linear")
+    scene.tracks.append(track)
+    scene.tracks += apply_preset("appear", caption, {"start_frame": start + dur, "duration_frames": 20})
+
+
+def build_solids(project: Project, scene: Scene) -> None:
+    """Solides 3D de la bibliothèque qui tournent sur eux-mêmes."""
+    c = project.canvas
+    k = _scale(c)
+    scene.background = "#0B1020"
+    shapes = [("cube", "#2677B8"), ("pyramid", "#E07A5F"), ("sphere", "#81B29A"), ("icosahedron", "#F2CC8F")]
+    title = new_node("text", "Titre", c.width / 2, 140 * k, text="Solides de l'espace", font_size=60 * k)
+    scene.nodes.append(title)
+    d = scene.duration_frames
+    scene.tracks += apply_preset("write", title, {"duration_frames": max(1, d // 6)})
+    for i, (shape, color) in enumerate(shapes):
+        x = c.width * (i + 1) / (len(shapes) + 1)
+        node = new_node(
+            "solid3d", shape, x, c.height / 2 + 40 * k, shape=shape, size=280 * k, style_fill=color
+        )
+        scene.nodes.append(node)
+        scene.tracks += apply_preset("appear", node, {"start_frame": i * 8, "duration_frames": 20})
+        scene.tracks += apply_preset("spin3d", node, {"duration_frames": d, "turns": 1.0, "tilt_deg": 20.0})
+
+
 TEMPLATES: dict[str, tuple[str, TemplateBuilder]] = {
     "intro": ("Introduction (titre et sous-titre)", build_intro),
     "moon_phases": ("Phases de la Lune (Soleil, Terre, Lune en orbite)", build_moon_phases),
@@ -480,6 +673,10 @@ TEMPLATES: dict[str, tuple[str, TemplateBuilder]] = {
     "kepler_orbit": ("Orbite de Kepler (modélisation à deux corps)", build_kepler_orbit),
     "three_body": ("Trois corps en huit (simulation numérique)", build_three_body),
     "binary_star": ("Étoile double (simulation numérique)", build_binary_star),
+    "chalkboard": ("Tableau noir (écriture à la craie)", build_chalkboard),
+    "linear_map": ("Transformation linéaire (grille, vecteurs î et ĵ)", build_linear_map),
+    "curved_spacetime": ("Espace-temps courbé par une masse", build_curved_spacetime),
+    "solids": ("Solides 3D en rotation", build_solids),
     "credits": ("Crédits (sources, ressources, logiciel)", build_credits),
 }
 

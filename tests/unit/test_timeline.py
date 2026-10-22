@@ -151,8 +151,12 @@ def test_all_mvp_presets_generate_valid_tracks() -> None:
 
     chart = make_node("chart", "Courbe")
     formula = make_node("formula", "Équation")
-    scene.nodes += [chart, formula]
-    targets = {"trace": chart, "morph": formula}  # « tracer » vise un graphique, « transformer » une formule
+    grid = make_node("grid", "Grille")
+    solid = make_node("solid3d", "Cube")
+    scene.nodes += [chart, formula, grid, solid]
+    # chaque animation vise un objet qu'elle concerne (graphique, formule, grille, solide 3D)
+    targets = {"trace": chart, "morph": formula, "write": formula, "erase": formula, "spin3d": solid}
+    targets |= {"linear_map": grid, "warp": grid, "wave_travel": grid}
     for pid in PRESETS:
         tracks = apply_preset(pid, targets.get(pid, moon))
         assert tracks, pid

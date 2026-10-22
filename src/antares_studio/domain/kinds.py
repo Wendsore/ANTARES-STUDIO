@@ -46,6 +46,42 @@ _STROKE_W = ParamSpec("stroke_width", "float", 0.0, animatable=True, label="Épa
 _DASH = ParamSpec("dash", "bool", False, label="Pointillés")
 
 _SHAPE_STYLE = (_FILL, _STROKE, _STROKE_W, _DASH)
+
+# écriture progressive des textes et des formules (``rendering.writing``)
+WRITE_STYLES: tuple[tuple[str, str], ...] = (
+    ("trace", "Tracé puis remplissage (façon 3Blue1Brown)"),
+    ("chalk", "Craie : chaque lettre de gauche à droite"),
+    ("typewriter", "Machine à écrire (avec curseur)"),
+    ("letters", "Lettres qui apparaissent en fondu"),
+    ("words", "Mots qui apparaissent en fondu"),
+)
+_WRITE = ParamSpec("write", "float", 1.0, True, "Écriture (0 → 1)", min=0, max=1)
+_WRITE_STYLE = ParamSpec("write_style", "str", "trace", False, "Façon d'écrire", choices=WRITE_STYLES)
+
+GRID_WARPS: tuple[tuple[str, str], ...] = (
+    ("none", "Aucune"),
+    ("gravity", "Puits de gravité (masse au centre)"),
+    ("wave", "Onde (gravitationnelle)"),
+    ("swirl", "Tourbillon"),
+)
+SOLID_SHAPES: tuple[tuple[str, str], ...] = (
+    ("cube", "Cube"),
+    ("box", "Pavé droit"),
+    ("sphere", "Sphère"),
+    ("cylinder", "Cylindre"),
+    ("cone", "Cône"),
+    ("pyramid", "Pyramide à base carrée"),
+    ("tetrahedron", "Tétraèdre"),
+    ("octahedron", "Octaèdre"),
+    ("icosahedron", "Icosaèdre"),
+    ("torus", "Tore"),
+)
+SOLID_MODES: tuple[tuple[str, str], ...] = (
+    ("shaded_edges", "Faces ombrées et arêtes"),
+    ("shaded", "Faces ombrées"),
+    ("wireframe", "Fil de fer (arêtes cachées en pointillé)"),
+    ("transparent", "Verre (faces transparentes)"),
+)
 _LINE_STYLE = (
     ParamSpec("stroke", "color", "#F2A93B", animatable=True, label="Couleur"),
     ParamSpec("stroke_width", "float", 4.0, animatable=True, label="Épaisseur", min=0),
@@ -129,6 +165,8 @@ KINDS: dict[str, KindSpec] = {
                 ParamSpec("italic", "bool", False, False, "Italique"),
                 ParamSpec("align", "str", "center", False, "Alignement"),
                 ParamSpec("max_width", "float", 0.0, False, "Largeur max (0 = libre)", min=0),
+                _WRITE,
+                _WRITE_STYLE,
             ),
             style=(
                 ParamSpec("fill", "color", "#FFFFFF", animatable=True, label="Couleur"),
@@ -177,6 +215,8 @@ KINDS: dict[str, KindSpec] = {
                 ParamSpec("italic", "bool", True, False, "Variables en italique"),
                 ParamSpec("morph_to", "str", "", False, "Transformer en (formule cible)"),
                 ParamSpec("morph", "float", 0.0, True, "Transformation (0 → 1)", min=0, max=1),
+                _WRITE,
+                _WRITE_STYLE,
             ),
             style=(
                 ParamSpec("fill", "color", "#FFFFFF", animatable=True, label="Couleur"),
@@ -244,6 +284,58 @@ KINDS: dict[str, KindSpec] = {
                 ParamSpec("pitch_deg", "float", 20.0, True, "Inclinaison (°)"),
             ),
         ),
+        KindSpec(
+            "grid",
+            "Grille (plan, transformation, déformation)",
+            params=(
+                ParamSpec("width", "float", 1600.0, True, "Largeur du cadre", min=10),
+                ParamSpec("height", "float", 900.0, True, "Hauteur du cadre", min=10),
+                ParamSpec("step", "float", 100.0, True, "Pas de la grille (px par unité)", min=5),
+                ParamSpec("progress", "float", 1.0, True, "Tracé de la grille (0 → 1)", min=0, max=1),
+                ParamSpec("m_a", "float", 1.0, True, "Matrice a (î en x)", min=-20, max=20),
+                ParamSpec("m_b", "float", 0.0, True, "Matrice b (ĵ en x)", min=-20, max=20),
+                ParamSpec("m_c", "float", 0.0, True, "Matrice c (î en y)", min=-20, max=20),
+                ParamSpec("m_d", "float", 1.0, True, "Matrice d (ĵ en y)", min=-20, max=20),
+                ParamSpec("warp", "str", "none", False, "Déformation", choices=GRID_WARPS),
+                ParamSpec("warp_amount", "float", 0.0, True, "Intensité de la déformation", min=-3, max=3),
+                ParamSpec("warp_radius", "float", 250.0, True, "Rayon de la déformation (px)", min=10),
+                ParamSpec("warp_phase", "float", 0.0, True, "Phase de l'onde (tours)"),
+                ParamSpec("perspective", "bool", False, False, "Vue en perspective (nappe inclinée)"),
+                ParamSpec("tilt_deg", "float", 60.0, True, "Inclinaison de la vue (°)", min=0, max=85),
+                ParamSpec("show_axes", "bool", True, False, "Axes"),
+                ParamSpec("show_basis", "bool", False, False, "Vecteurs de base î et ĵ"),
+                ParamSpec("show_ghost", "bool", True, False, "Grille d'origine en filigrane"),
+            ),
+            style=(
+                ParamSpec("stroke", "color", "#4FC3F7", animatable=True, label="Lignes"),
+                ParamSpec("stroke_width", "float", 2.0, animatable=True, label="Épaisseur", min=0),
+                ParamSpec("axis_color", "color", "#FFFFFF", animatable=True, label="Axes"),
+                ParamSpec("ghost_color", "color", "#FFFFFF30", animatable=True, label="Filigrane"),
+                ParamSpec("i_color", "color", "#83C167", animatable=True, label="Vecteur î"),
+                ParamSpec("j_color", "color", "#FC6255", animatable=True, label="Vecteur ĵ"),
+            ),
+        ),
+        KindSpec(
+            "solid3d",
+            "Solide 3D (cube, sphère, pyramide…)",
+            params=(
+                ParamSpec("shape", "str", "cube", False, "Forme", choices=SOLID_SHAPES),
+                ParamSpec("size", "float", 300.0, True, "Taille à l'écran", min=1),
+                ParamSpec("size_x", "float", 1.6, True, "Pavé : longueur relative", min=0.05, max=20),
+                ParamSpec("size_y", "float", 1.0, True, "Pavé : hauteur relative", min=0.05, max=20),
+                ParamSpec("size_z", "float", 0.8, True, "Pavé : profondeur relative", min=0.05, max=20),
+                ParamSpec("yaw_deg", "float", 35.0, True, "Rotation horizontale (°)"),
+                ParamSpec("pitch_deg", "float", 25.0, True, "Inclinaison (°)"),
+                ParamSpec("roll_deg", "float", 0.0, True, "Roulis (°)"),
+                ParamSpec("render_mode", "str", "shaded_edges", False, "Rendu", choices=SOLID_MODES),
+                ParamSpec("perspective", "float", 0.0, True, "Perspective (0 = aucune)", min=0, max=1),
+            ),
+            style=(
+                ParamSpec("fill", "color", "#2677B8", animatable=True, label="Faces"),
+                ParamSpec("stroke", "color", "#FFFFFF", animatable=True, label="Arêtes"),
+                ParamSpec("stroke_width", "float", 2.5, animatable=True, label="Épaisseur des arêtes", min=0),
+            ),
+        ),
         KindSpec("group", "Groupe", container=True),
         KindSpec(
             "camera",
@@ -263,6 +355,47 @@ KINDS: dict[str, KindSpec] = {
         ),
     )
 }
+
+# variantes prêtes à poser depuis la Bibliothèque : « type:variante » -> (libellé, paramètres imposés)
+OBJECT_VARIANTS: dict[str, tuple[str, dict[str, Any]]] = {
+    **{f"solid3d:{shape}": (label, {"shape": shape}) for shape, label in SOLID_SHAPES},
+    "grid:plane": ("Repère quadrillé (plan)", {}),
+    "grid:transform": ("Grille et vecteurs î, ĵ (algèbre linéaire)", {"show_basis": True}),
+    "grid:spacetime": (
+        "Espace-temps courbé (nappe)",
+        {
+            "perspective": True,
+            "warp": "gravity",
+            "warp_amount": 1.0,
+            "warp_radius": 180.0,
+            "show_axes": False,
+            "height": 1400.0,
+            "step": 70.0,
+        },
+    ),
+    "grid:wave": (
+        "Onde gravitationnelle (nappe)",
+        {
+            "perspective": True,
+            "warp": "wave",
+            "warp_amount": 1.0,
+            "warp_radius": 260.0,
+            "show_axes": False,
+            "height": 1400.0,
+            "step": 60.0,
+        },
+    ),
+}
+
+
+def resolve_variant(ident: str) -> tuple[str, str, dict[str, Any]]:
+    """« solid3d:cube » -> (type, libellé, paramètres imposés) ; un type simple n'impose rien."""
+    if ident in OBJECT_VARIANTS:
+        label, params = OBJECT_VARIANTS[ident]
+        return ident.partition(":")[0], label, dict(params)
+    spec = spec_for(ident)
+    return spec.kind, spec.label, {}
+
 
 BASE_ANIMATABLE: tuple[str, ...] = (
     "position.x",

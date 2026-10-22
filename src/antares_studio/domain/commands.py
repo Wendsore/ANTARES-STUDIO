@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from antares_studio.domain.model import (
+    BACKDROPS,
     AssetLicense,
     AudioClip,
     Keyframe,
@@ -350,15 +351,17 @@ class ReorderNode:
 @dataclass
 class SetSceneProperty:
     scene_id: str
-    attr: str  # name | duration_frames | background | transition | post
+    attr: str  # name | duration_frames | background | transition | post | backdrop
     value: Any
     label: str = "Modifier la scène"
     _old: Any = field(default=None, repr=False)
 
     def do(self, project: Project) -> None:
         scene = project.scene(self.scene_id)
-        if self.attr not in ("name", "duration_frames", "background", "transition", "post"):
+        if self.attr not in ("name", "duration_frames", "background", "transition", "post", "backdrop"):
             raise KeyError(self.attr)
+        if self.attr == "backdrop" and self.value not in BACKDROPS:
+            raise ValueError(f"décor inconnu : {self.value!r}")
         if self.attr == "post" and not isinstance(self.value, dict):
             raise TypeError("post : dictionnaire de filtres attendu")
         if self.attr == "transition" and not isinstance(self.value, SceneTransition):

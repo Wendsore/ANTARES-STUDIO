@@ -328,11 +328,74 @@ def cosmic_wind(rng: np.random.Generator) -> Signal:
     return _loopable(_lowpass_fast(_pink(rng, d), 700) * gust)
 
 
+def _strokes(
+    rng: np.random.Generator,
+    d: float,
+    low: float,
+    high: float,
+    lengths: tuple[float, float],
+    gaps: tuple[float, float],
+) -> Signal:
+    """Traits d'écriture : bouffées de bruit dans la bande ``low``–``high`` Hz, d'intensité irrégulière."""
+    out = np.zeros(int(d * RATE))
+    pos = 0.05
+    while pos < d - lengths[1]:
+        raw = _noise(rng, rng.uniform(*lengths))
+        n = len(raw)
+        grit = _lowpass_fast(raw - _lowpass_fast(raw, low), high)
+        jitter = np.repeat(rng.uniform(0.45, 1.0, n // 240 + 1), 240)[:n]  # l'outil accroche par à-coups
+        stroke = grit * jitter * np.sin(np.linspace(0, np.pi, n)) ** 0.6
+        start = int(pos * RATE)
+        out[start : start + n] += stroke
+        pos += n / RATE + rng.uniform(*gaps)
+    return out
+
+
+def chalk(rng: np.random.Generator) -> Signal:
+    """Craie sur une ardoise : traits aigus (2–7 kHz), séparés de courtes levées de main."""
+    return _strokes(rng, 3.0, 1800.0, 7000.0, (0.08, 0.28), (0.03, 0.14))
+
+
+def pen(rng: np.random.Generator) -> Signal:
+    """Stylo sur papier : traits plus doux et plus graves que la craie, rapides."""
+    return _strokes(rng, 3.0, 700.0, 3500.0, (0.05, 0.16), (0.02, 0.08)) * 0.7
+
+
+def eraser(rng: np.random.Generator) -> Signal:
+    """Brosse sur le tableau : quatre allers-retours étouffés."""
+    return _strokes(rng, 2.0, 150.0, 1400.0, (0.3, 0.4), (0.04, 0.08))
+
+
+def typewriter(rng: np.random.Generator) -> Signal:
+    """Frappe de machine à écrire : touches irrégulières, puis la clochette de fin de ligne."""
+    d = 3.2
+    out = np.zeros(int(d * RATE))
+    pos = 0.05
+    while pos < d - 0.6:
+        n = int(0.04 * RATE)
+        key = _lowpass_fast(_noise(rng, 0.04), 5000.0) * _env(n, 0.0005, 0.0, 8.0)
+        key += _tone(rng.uniform(150, 210), 0.04) * _env(n, 0.001, 0.0, 4.0) * 0.6  # choc du marteau
+        start = int(pos * RATE)
+        out[start : start + n] += key * rng.uniform(0.6, 1.0)
+        pos += rng.uniform(0.09, 0.2)
+    bell = _tone(2637.0, 0.5, (1.0, 0.3)) * np.exp(-6.0 * _t(0.5))
+    start = len(out) - len(bell) - int(0.02 * RATE)
+    out[start : start + len(bell)] += bell * 0.5
+    return out
+
+
 def soft_noise(rng: np.random.Generator) -> Signal:
     return _loopable(_lowpass_fast(_pink(rng, 21.0), 4000))
 
 
-CATEGORIES: tuple[str, ...] = ("Transitions", "Interface", "Impacts", "Sciences et espace", "Ambiances")
+CATEGORIES: tuple[str, ...] = (
+    "Transitions",
+    "Interface",
+    "Écriture",
+    "Impacts",
+    "Sciences et espace",
+    "Ambiances",
+)
 
 SOUNDS: dict[str, SoundSpec] = {
     s.id: s
@@ -390,6 +453,38 @@ SOUNDS: dict[str, SoundSpec] = {
             "Impacts",
             "Grondement qui s'éteint en 3 s : supernova, impact.",
             explosion,
+        ),
+        SoundSpec(
+            "chalk",
+            "Craie sur le tableau",
+            "Écriture",
+            "3 s de craie qui écrit, à caler sur l'animation « Écrire » d'un texte au tableau.",
+            chalk,
+            -6.0,
+        ),
+        SoundSpec(
+            "typewriter",
+            "Machine à écrire",
+            "Écriture",
+            "Frappe de touches puis clochette de fin de ligne (3,2 s) : style « Machine à écrire ».",
+            typewriter,
+            -4.0,
+        ),
+        SoundSpec(
+            "pen",
+            "Stylo sur papier",
+            "Écriture",
+            "3 s de stylo qui court sur une feuille : styles « Cahier » et « Notes rapides ».",
+            pen,
+            -8.0,
+        ),
+        SoundSpec(
+            "eraser",
+            "Effacer le tableau",
+            "Écriture",
+            "Brosse qui efface l'ardoise (2 s), avec l'animation « Effacer l'écriture ».",
+            eraser,
+            -6.0,
         ),
         SoundSpec("thunder", "Tonnerre", "Impacts", "Roulements de tonnerre sur 5 s.", thunder),
         SoundSpec("gong", "Gong", "Impacts", "Gong grave et long : moment solennel, titre.", gong),

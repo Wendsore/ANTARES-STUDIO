@@ -174,6 +174,18 @@ class SceneTransition:
     duration_frames: int = 15
 
 
+# décors de fond dessinés par le logiciel (aucune image à fournir) : identifiant -> libellé FR
+BACKDROPS: dict[str, str] = {
+    "": "Aucun (couleur unie)",
+    "chalkboard_black": "Tableau noir (ardoise)",
+    "chalkboard_green": "Tableau vert d'école",
+    "grid_paper": "Papier quadrillé",
+    "lined_paper": "Cahier à lignes (Seyès simplifié)",
+    "blueprint": "Plan d'architecte (bleu)",
+    "starfield": "Ciel étoilé",
+}
+
+
 @dataclass
 class Scene:
     id: str
@@ -187,6 +199,7 @@ class Scene:
     markers: list[Marker] = field(default_factory=list)
     transition: SceneTransition = field(default_factory=SceneTransition)
     post: dict[str, Any] = field(default_factory=dict)  # filtres d'image (``domain.effects.SCENE_POST``)
+    backdrop: str = ""  # décor procédural peint sur le fond (``BACKDROPS``) ; vide = fond uni
 
     @classmethod
     def create(cls, name: str, duration_frames: int = 300, **kwargs: Any) -> Scene:

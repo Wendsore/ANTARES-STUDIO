@@ -5,10 +5,18 @@ from __future__ import annotations
 from typing import Any
 
 from antares_studio.domain.effects import EFFECTS_BY_NAME, supports_effects
-from antares_studio.domain.kinds import BASE_ANIMATABLE, check_param_value, spec_for
+from antares_studio.domain.kinds import BASE_ANIMATABLE, KINDS, check_param_value, spec_for
 from antares_studio.domain.model import Node
 
 _BASE_SCALAR = ("rotation_deg", "opacity", "visible", "locked", "z_index", "name", "parent_id")
+
+
+def _spec_default(kind: str, group: str, name: str) -> Any:
+    spec = KINDS.get(kind)
+    for p in (spec.params if group == "params" else spec.style) if spec is not None else ():
+        if p.name == name:
+            return list(p.default) if isinstance(p.default, list) else p.default
+    raise KeyError(f"{group}.{name}")
 
 
 def get_property(node: Node, path: str) -> Any:
@@ -18,10 +26,16 @@ def get_property(node: Node, path: str) -> Any:
     if group == "scale" and name in ("x", "y"):
         return node.scale[0 if name == "x" else 1]
     if group == "params":
+        if (
+            name not in node.params
+        ):  # paramètre ajouté après l'enregistrement du projet : sa valeur par défaut
+            return _spec_default(node.kind, "params", name)
         return node.params[name]
     if group == "style":
         if name not in node.style and name in EFFECTS_BY_NAME and supports_effects(node.kind):
             return EFFECTS_BY_NAME[name].default  # effet jamais réglé : sa valeur neutre
+        if name not in node.style:
+            return _spec_default(node.kind, "style", name)
         return node.style[name]
     if path in _BASE_SCALAR:
         return getattr(node, path)

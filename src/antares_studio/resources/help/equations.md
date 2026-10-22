@@ -50,4 +50,4 @@ Un seul caractère n'a pas besoin d'accolades : `x^2` et `a_n` fonctionnent.
 
 La formule n'est **jamais exécutée** : c'est du texte mis en forme. Une commande inconnue, par exemple `\foo`, reste affichée telle quelle. Une accolade oubliée est fermée automatiquement. Si le rendu surprend, vérifiez l'orthographe des commandes et les accolades.
 
-Les tableaux, matrices et l'écriture progressive d'une formule ne sont pas encore disponibles ; la transformation d'une formule en une autre l'est (voir plus haut).
+Les tableaux et matrices ne sont pas encore disponibles. Une formule peut **s'écrire progressivement** (animation **Écrire**, voir [Écriture progressive](ecriture-et-craie.md)) ou se transformer en une autre (voir plus haut).

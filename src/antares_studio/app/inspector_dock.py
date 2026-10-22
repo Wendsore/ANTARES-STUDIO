@@ -298,6 +298,18 @@ class InspectorDock(QWidget):
         bg.set_value(scene.background)
         bg.changed.append(lambda v: self._scene_attr("background", v))
         self.form.addRow("Fond :", bg)
+        from antares_studio.domain.model import BACKDROPS
+
+        backdrop = compact_combo()
+        backdrop.setObjectName("scene_backdrop")
+        for key, label in BACKDROPS.items():
+            backdrop.addItem(label, key)
+        backdrop.setCurrentIndex(max(0, backdrop.findData(scene.backdrop)))
+        backdrop.setToolTip("Décor dessiné par-dessus la couleur de fond : tableau noir, papier, plan, ciel")
+        backdrop.currentIndexChanged.connect(
+            lambda _i: self._scene_attr("backdrop", str(backdrop.currentData()))
+        )
+        self.form.addRow("Décor :", backdrop)
         from antares_studio.rendering.transitions import TRANSITION_LABELS
 
         kind = compact_combo()
@@ -500,6 +512,48 @@ class InspectorDock(QWidget):
         self._editors[path] = editor
         self.form.addRow(label + " :", row)
 
+    def _font_combo(self, path: str) -> QComboBox:
+        """Polices livrées avec le logiciel (identiques sur tous les postes) puis polices de l'ordinateur ;
+        un nom peut aussi être saisi."""
+        from PySide6.QtGui import QFontDatabase
+
+        from antares_studio.resources.fonts import BUNDLED_FONTS, ensure_fonts
+
+        ensure_fonts()
+        combo = compact_combo()
+        combo.setObjectName("font_family")
+        combo.setEditable(True)
+        combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        combo.setMaxVisibleItems(18)
+        for font in BUNDLED_FONTS:
+            combo.addItem(font.family, font.family)  # le champ montre le nom ; l'usage est en infobulle
+            combo.setItemData(
+                combo.count() - 1,
+                f"{font.usage} — livrée avec ANTARES Studio ({font.category})",
+                Qt.ItemDataRole.ToolTipRole,
+            )
+        combo.insertSeparator(combo.count())
+        bundled = {f.family for f in BUNDLED_FONTS}
+        for family in QFontDatabase.families():
+            if family not in bundled and not QFontDatabase.isPrivateFamily(family):
+                combo.addItem(family, family)
+        combo.setToolTip(
+            "Polices livrées en tête de liste : la vidéo a le même aspect sur tous les ordinateurs. "
+            "Les suivantes sont celles installées sur ce poste."
+        )
+        combo.textActivated.connect(lambda _t, p=path: self._commit(p, combo.currentData() or _t))
+        line = combo.lineEdit()
+        if line is not None:
+            line.editingFinished.connect(
+                lambda p=path: self._commit(
+                    p,
+                    combo.currentData()
+                    if combo.findText(combo.currentText()) >= 0
+                    else combo.currentText().strip(),
+                )
+            )
+        return combo
+
     def _make_editor(self, path: str, spec: ParamSpec) -> QWidget:
         t = spec.type
         if t == "float":
@@ -554,6 +608,8 @@ class InspectorDock(QWidget):
             te.setMaximumHeight(80)
             te.textChanged.connect(lambda p=path: self._commit_text(p, te))
             return te
+        if path == "params.font_family":
+            return self._font_combo(path)
         if path == "params.align":
             combo = QComboBox()
             combo.addItem("Centré", "center")
