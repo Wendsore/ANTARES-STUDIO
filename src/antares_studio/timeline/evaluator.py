@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from antares_studio.domain.colors import is_color, mix_color
+from antares_studio.domain.effects import EFFECTS_BY_NAME
 from antares_studio.domain.kinds import spec_for
 from antares_studio.domain.model import Canvas, Node, Project, Scene, Track, Value
 from antares_studio.domain.properties import get_property
@@ -270,4 +271,6 @@ def base_value(node: Node, path: str) -> Any:
         for p in spec.params if group == "params" else spec.style if group == "style" else ():
             if p.name == name:
                 return p.default
+        if group == "style" and name in EFFECTS_BY_NAME:
+            return EFFECTS_BY_NAME[name].default
         raise

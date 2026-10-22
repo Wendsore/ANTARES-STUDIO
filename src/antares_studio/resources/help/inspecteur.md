@@ -7,6 +7,7 @@ L'Inspecteur, à droite, change selon ce qui est sélectionné.
 1. **Propriétés communes** : nom, position, rotation, échelle, opacité, visible, ordre (plan), verrouillé.
 2. **Paramètres** propres au type : rayon, texte, police, colonnes d'un graphique…
 3. **Style** : couleurs, épaisseurs, pointillés.
+4. **Effets** : flou, lueur, ombre portée, luminosité, contraste, saturation (sauf groupes et caméras). Voir [Effets et filtres](effets-et-filtres.md).
 
 - Les **couleurs** s'affichent en code hexadécimal ; un clic ouvre le sélecteur, transparence comprise.
 - Les nombres se règlent au clavier, avec les flèches ou la molette.
@@ -31,4 +32,5 @@ L'Inspecteur montre les propriétés **communes** à tous les objets sélectionn
 L'Inspecteur montre :
 
 - **la scène** : nom, durée en images (l'infobulle donne la durée en secondes), couleur de fond, **transition** d'entrée et sa durée, format du canevas ;
+- **les filtres de la scène** : préréglage (Cinéma, Espace profond…) et réglages fins ; voir [Effets et filtres](effets-et-filtres.md) ;
 - **les métadonnées scientifiques** du projet : représentation, à l'échelle ou non, notes, sources. Voir [Rigueur scientifique](rigueur-scientifique.md).

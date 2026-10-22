@@ -11,9 +11,18 @@ ANTARES Studio est en version de développement. Voici, honnêtement, ce qu'il n
 
 ## Son
 
-- Marqueurs sur la forme d'onde, normalisation du volume, réduction de bruit.
+- Marqueurs sur la forme d'onde, réduction de bruit, égaliseur.
+- Bruitages : uniquement les sons de synthèse fournis ; pas de banque de sons enregistrés.
 - Le niveau d'atténuation de la musique sous la voix n'est pas réglable (environ 15 dB).
 - L'enregistrement au micro n'a été vérifié que sous Linux ; sous Windows, il reste à confirmer sur un vrai poste.
+
+## Post-production et export
+
+- Changer la cadence à l'export (par exemple projet à 30 images/s exporté en 25 ou 60) : la vidéo garde la cadence du projet.
+- Effets sur un groupe entier ou sur une caméra : appliquez-les aux objets.
+- Séquence PNG de toutes les scènes à la suite : exportez-la scène par scène.
+- Normalisation du volume sur l'ensemble d'une vidéo complète : chaque scène est normalisée séparément.
+- Effets de transition personnalisés : seules les transitions fournies (fondu, glissements, volet) existent.
 
 ## Sciences
 

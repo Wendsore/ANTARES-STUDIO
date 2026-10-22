@@ -40,11 +40,20 @@ TOPICS: tuple[Topic, ...] = (
     Topic("inspecteur", "Créer", "L'Inspecteur", "propriétés couleur position"),
     Topic("scenes-et-calques", "Créer", "Scènes, calques et groupes", "ordre plan visibilité verrou"),
     Topic("bibliotheque", "Créer", "La Bibliothèque et les favoris", "recherche favori"),
+    Topic(
+        "effets-et-filtres",
+        "Créer",
+        "Effets et filtres",
+        "lueur ombre flou glow étalonnage vignettage grain sépia post-production",
+    ),
     Topic("modeles", "Créer", "Modèles pédagogiques", "template gabarit"),
     Topic("animations", "Animer", "Animations prédéfinies", "preset orbite apparition"),
     Topic("images-cles", "Animer", "Images clés et Timeline", "keyframe clé lecture"),
     Topic("narration", "Son et texte", "Narration audio", "voix son audio mp3 wav"),
     Topic("sous-titres", "Son et texte", "Sous-titres", "srt vtt accessibilité"),
+    Topic(
+        "bruitages", "Son et texte", "Bruitages et ambiances", "bruit son effet sonore whoosh ambiance cc0"
+    ),
     Topic(
         "rigueur-scientifique",
         "Sciences",
@@ -59,7 +68,12 @@ TOPICS: tuple[Topic, ...] = (
     Topic("images", "Ressources", "Images importées", "png svg jpeg photo"),
     Topic("provenance-et-licences", "Ressources", "Provenance et licences", "licence droits auteur"),
     Topic("credits", "Ressources", "Crédits", "générique sources"),
-    Topic("export-video", "Exporter", "Exporter la vidéo", "mp4 rendu export youtube"),
+    Topic(
+        "export-video",
+        "Exporter",
+        "Exporter la vidéo",
+        "mp4 rendu export youtube 4k prores png transparence wav mp3 lufs",
+    ),
     Topic("ligne-de-commande", "Exporter", "Ligne de commande", "cli terminal selftest"),
     Topic("raccourcis", "Référence", "Raccourcis clavier", "clavier touches"),
     Topic("personnalisation", "Référence", "Thème, taille du texte et disposition", "clair sombre police"),
@@ -183,11 +197,43 @@ def _profiles() -> str:
         "|---|---|---|---|---|",
     ]
     for p in PROFILES.values():
-        frame = f"{p.width} × {p.height}" + (" imposé" if p.fixed_frame else "")
+        frame = f"{p.width} × {p.height}" + (" imposé" if p.fixed_frame else "") if p.has_video else "—"
         fps = f", {p.max_fps:g} images/s au plus" if p.max_fps else ""
+        alpha = ", transparence possible" if p.alpha else ""
         sound = "" if p.has_audio else ", sans son"
-        lines.append(f"| **{p.label}** | {p.group} | `{p.suffix}`{sound} | {frame}{fps} | `{p.id}` |")
+        file = "dossier d'images" if p.is_sequence else f"`{p.suffix}`"
+        lines.append(f"| **{p.label}** | {p.group} | {file}{sound} | {frame}{fps}{alpha} | `{p.id}` |")
     return "\n".join(lines)
+
+
+def _effects() -> str:
+    from antares_studio.domain.effects import EFFECT_PRESETS, OBJECT_LOOKS
+    from antares_studio.timeline.presets import PRESETS
+
+    lines = ["| Effet d'objet | Usage |", "|---|---|"]
+    lines += [f"| **{label}** | {desc} |" for label, desc, _v in OBJECT_LOOKS.values()]
+    lines += ["", "Animations d'effet :", ""]
+    lines += [f"- **{PRESETS[k].label}** — {PRESETS[k].description}" for k in EFFECT_PRESETS]
+    return "\n".join(lines)
+
+
+def _scene_looks() -> str:
+    from antares_studio.domain.effects import SCENE_LOOKS
+
+    lines = ["| Filtre de scène | Rendu |", "|---|---|"]
+    lines += [f"| **{label}** | {desc} |" for label, desc, _v in SCENE_LOOKS.values()]
+    return "\n".join(lines)
+
+
+def _sounds() -> str:
+    from antares_studio.audio import sfx
+
+    out: list[str] = []
+    for cat in sfx.CATEGORIES:
+        out += [f"### {cat}", "", "| Son | Usage |", "|---|---|"]
+        out += [f"| **{s.label}** | {s.description} |" for s in sfx.SOUNDS.values() if s.category == cat]
+        out.append("")
+    return "\n".join(out).rstrip()
 
 
 def _symbols() -> str:
@@ -228,4 +274,7 @@ GENERATED = {
     "modeles": _templates,
     "exemples": _example_files,
     "tutoriels": _tutorials,
+    "effets": _effects,
+    "filtres": _scene_looks,
+    "sons": _sounds,
 }

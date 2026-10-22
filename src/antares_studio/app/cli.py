@@ -42,6 +42,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--all-scenes", action="store_true", help="exporte toutes les scènes à la suite (vidéo complète)"
     )
+    parser.add_argument(
+        "--transparent",
+        action="store_true",
+        help="fond transparent (profils prores_4444 et png_sequence uniquement)",
+    )
     return parser
 
 
@@ -130,7 +135,12 @@ def run_selftest(out: list[str] | None = None) -> int:
 
 
 def run_export(
-    project_path: str, output: str, profile_id: str, scene_ref: str = "", all_scenes: bool = False
+    project_path: str,
+    output: str,
+    profile_id: str,
+    scene_ref: str = "",
+    all_scenes: bool = False,
+    transparent: bool = False,
 ) -> int:
     from antares_studio.app.main import create_app
     from antares_studio.persistence.store import ProjectStore, resolve_project_root
@@ -174,14 +184,26 @@ def run_export(
         result: RenderResult | ProjectRenderResult
         if all_scenes:
             result = export_project(
-                project, profile_id, str(Path(output).resolve()), progress=progress, assets=resolve
+                project,
+                profile_id,
+                str(Path(output).resolve()),
+                progress=progress,
+                assets=resolve,
+                transparent=transparent,
             )
             for p in result.plans:
                 for w in p.warnings:
                     print(f"avertissement ({p.scene_name}) : {w}", file=sys.stderr)
         else:
             audio = audio_plans_for_scene(project, scene.id, resolve)
-            plan = build_render_plan(project, scene.id, profile_id, str(Path(output).resolve()), audio=audio)
+            plan = build_render_plan(
+                project,
+                scene.id,
+                profile_id,
+                str(Path(output).resolve()),
+                audio=audio,
+                transparent=transparent,
+            )
             for w in plan.warnings:
                 print(f"avertissement : {w}", file=sys.stderr)
             result = export_video(project, plan, progress=progress, assets=resolve)
@@ -203,7 +225,9 @@ def run_cli(argv: list[str]) -> int | None:
     if args.selftest:
         return run_selftest()
     if args.export:
-        return run_export(args.export[0], args.export[1], args.profile, args.scene, args.all_scenes)
+        return run_export(
+            args.export[0], args.export[1], args.profile, args.scene, args.all_scenes, args.transparent
+        )
     if args.capture:
         from antares_studio.app.captures import capture_screens
 

@@ -56,11 +56,12 @@ from antares_studio.domain.commands import (
     SetAssetLicense,
     SetProjectMetadata,
     SetProperties,
+    SetSceneProperty,
 )
 from antares_studio.domain.ids import new_id
 from antares_studio.domain.kinds import spec_for
 from antares_studio.domain.layout import ALIGN_MODES, align_deltas, distribute_deltas
-from antares_studio.domain.model import AssetLicense, Canvas, Marker, Node, Scene
+from antares_studio.domain.model import AssetLicense, AudioClip, Canvas, Marker, Node, Scene
 from antares_studio.domain.validation import ProjectValidationError
 from antares_studio.help import topics
 from antares_studio.help.tutorials import TUTORIALS, TUTORIALS_BY_ID, TutorialContext
@@ -192,6 +193,9 @@ class MainWindow(QMainWindow):
         self.library.templateRequested.connect(self.add_template_scene)
         self.library.assetActivated.connect(self.edit_asset_provenance)
         self.library.favoritesChanged.connect(self.settings.set_favorites)
+        self.library.objectLookRequested.connect(self.apply_object_look)
+        self.library.sceneLookRequested.connect(self.apply_scene_look)
+        self.library.soundRequested.connect(self.insert_sound)
         self.library_dock = self._dock(
             "Bibliothèque", self.library, Qt.DockWidgetArea.LeftDockWidgetArea, "dock_library"
         )
@@ -1625,6 +1629,77 @@ class MainWindow(QMainWindow):
                 f"« {PRESETS[preset_id].label} » ne s'applique pas à : {', '.join(skipped)}", 8000
             )
         return skipped
+
+    def apply_object_look(self, look_id: str) -> int:
+        """Remplace les effets des objets sélectionnés par ceux du préréglage (une étape d'annulation)."""
+        from antares_studio.domain.effects import EFFECTS, OBJECT_LOOKS, supports_effects
+
+        scene = self.document.scene
+        if scene is None or look_id not in OBJECT_LOOKS:
+            return 0
+        targets = [n for n in self.document.selected_nodes if supports_effects(n.kind)]
+        if not targets:
+            QMessageBox.information(
+                self, "Effets", "Sélectionnez d'abord un objet (les groupes et caméras n'ont pas d'effets)."
+            )
+            return 0
+        label, _desc, values = OBJECT_LOOKS[look_id]
+        full = {f"style.{p.name}": values.get(p.name, p.default) for p in EFFECTS}
+        with self.document.macro(f"Effet : {label}"):
+            for node in targets:
+                self.document.push(SetProperties(scene.id, node.id, dict(full), label=f"Effet : {label}"))
+        self.statusBar().showMessage(f"Effet « {label} » appliqué à {len(targets)} objet(s).", 5000)
+        return len(targets)
+
+    def apply_scene_look(self, look_id: str) -> bool:
+        """Pose le filtre d'étalonnage sur la scène courante (remplace le filtre précédent)."""
+        from antares_studio.domain.effects import SCENE_LOOKS
+
+        scene = self.document.scene
+        if scene is None or look_id not in SCENE_LOOKS:
+            return False
+        label, _desc, values = SCENE_LOOKS[look_id]
+        self.document.push(SetSceneProperty(scene.id, "post", dict(values), label=f"Filtre : {label}"))
+        self.statusBar().showMessage(f"Filtre « {label} » sur la scène « {scene.name} ».", 5000)
+        return True
+
+    def insert_sound(self, sound_id: str) -> AudioClip | None:
+        """Ajoute un bruitage de la bibliothèque à la tête de lecture : copie dans audio/, piste « effet »,
+        fiche de provenance remplie (son de synthèse ANTARES Studio, CC0)."""
+        from datetime import date
+
+        from antares_studio.app.library_dock import sound_cache_dir
+        from antares_studio.audio import sfx
+        from antares_studio.domain.commands import SetAudioClipAttr
+
+        if sound_id not in sfx.SOUNDS or self.document.scene is None:
+            return None
+        if self.document.paths is None:
+            QMessageBox.information(self, "Bruitages", "Enregistrez d'abord le projet (Ctrl+S).")
+            return None
+        spec = sfx.SOUNDS[sound_id]
+        path = sfx.write_sound(sound_id, sound_cache_dir())
+        with self.document.macro(f"Bruitage : {spec.label}"):
+            clip = self.narration.audio.add_audio_file(path, name=spec.label)
+            if clip is None:
+                return None
+            scene_id = self.document.scene.id
+            self.document.push(SetAudioClipAttr(scene_id, clip.id, "role", "effect"))
+            self.document.push(
+                SetAssetLicense(
+                    clip.asset_id,
+                    AssetLicense(
+                        author="ANTARES Studio (son de synthèse)",
+                        license="CC0-1.0",
+                        redistribution_allowed=True,
+                        verified_on=date.today().isoformat(),
+                    ),
+                )
+            )
+        self.statusBar().showMessage(
+            f"Bruitage « {spec.label} » ajouté à l'image {self.document.frame}.", 5000
+        )
+        return clip
 
     def add_template_scene(self, template_id: str) -> None:
         if template_id not in TEMPLATES:

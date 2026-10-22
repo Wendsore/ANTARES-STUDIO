@@ -35,6 +35,7 @@ from antares_studio.domain.commands import (
     SetProjectMetadata,
     SetSceneProperty,
 )
+from antares_studio.domain.effects import EFFECTS, SCENE_LOOKS, SCENE_POST, post_values, supports_effects
 from antares_studio.domain.kinds import BASE_LABELS, KINDS, ParamSpec
 from antares_studio.domain.model import Node
 from antares_studio.domain.properties import is_animatable
@@ -150,6 +151,8 @@ class InspectorDock(QWidget):
         self._mixed_labels: dict[str, QLabel] = {}
         self._updating = False
         self.sources_button: QPushButton | None = None
+        self._post_editors: dict[str, QDoubleSpinBox] = {}  # filtres de la scène (sans sélection)
+        self._post_look: QComboBox | None = None
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         self.scroll_area = QScrollArea()
@@ -179,6 +182,8 @@ class InspectorDock(QWidget):
         self._key_buttons.clear()
         self._mixed_labels.clear()
         self._multi_ids = []
+        self._post_editors.clear()
+        self._post_look = None
 
     def rebuild(self) -> None:
         self._clear()
@@ -219,6 +224,10 @@ class InspectorDock(QWidget):
                 self.form.addRow(QLabel("<b>Style</b>"))
                 for ps in spec.style:
                     self._add_editor(f"style.{ps.name}", ps.label or ps.name, ps, node)
+        if supports_effects(node.kind):
+            self.form.addRow(QLabel("<b>Effets</b>"))
+            for ps in EFFECTS:
+                self._add_editor(f"style.{ps.name}", ps.label or ps.name, ps, node)
         self.refresh_values()
 
     def _build_multi_form(self, sel: list[Node]) -> None:
@@ -320,8 +329,68 @@ class InspectorDock(QWidget):
         self.form.addRow("Durée de la transition :", tr_dur)
         c = self.document.project.canvas
         self.form.addRow(wrapped_label(f"Canevas : {c.width} × {c.height} px, {float(c.fps):g} images/s"))
+        self._build_post_form()
         self._build_metadata_form()
         self.form.addRow(wrapped_label("Sélectionnez un objet pour modifier ses propriétés."))
+
+    def _build_post_form(self) -> None:
+        """Filtres d'étalonnage de la scène : préréglage puis réglage fin (éditeur, PNG et export)."""
+        self.form.addRow(wrapped_label("<b>Filtres de la scène</b>"))
+        look = compact_combo()
+        look.setObjectName("scene_look")
+        for key, (label, description, _v) in SCENE_LOOKS.items():
+            look.addItem(label, key)
+            look.setItemData(look.count() - 1, description, Qt.ItemDataRole.ToolTipRole)
+        look.addItem("Personnalisé", "")
+        look.currentIndexChanged.connect(lambda _i: self._apply_look(str(look.currentData() or "")))
+        self._post_look = look
+        self.form.addRow("Préréglage :", look)
+        for ps in SCENE_POST:
+            sb = QDoubleSpinBox()
+            sb.setObjectName(f"post_{ps.name}")
+            sb.setRange(float(ps.min or 0.0), float(ps.max or 1.0))
+            sb.setDecimals(2)
+            sb.setSingleStep(0.05)
+            sb.setKeyboardTracking(False)
+            sb.valueChanged.connect(lambda v, n=ps.name: self._set_post(n, float(v)))
+            self._post_editors[ps.name] = sb
+            self.form.addRow((ps.label or ps.name) + " :", sb)
+        self._refresh_post()
+
+    def _post_dict(self, values: dict[str, float]) -> dict[str, float]:
+        """Seules les valeurs qui s'écartent du neutre sont enregistrées."""
+        return {p.name: values[p.name] for p in SCENE_POST if abs(values[p.name] - float(p.default)) > 1e-6}
+
+    def _set_post(self, name: str, value: float) -> None:
+        scene = self.document.scene
+        if self._updating or scene is None:
+            return
+        values = post_values(scene.post)
+        values[name] = value
+        self._scene_attr("post", self._post_dict(values))
+
+    def _apply_look(self, key: str) -> None:
+        scene = self.document.scene
+        if self._updating or scene is None or key not in SCENE_LOOKS:
+            return
+        self._scene_attr("post", self._post_dict(post_values(SCENE_LOOKS[key][2])))
+
+    def _refresh_post(self) -> None:
+        scene = self.document.scene
+        if scene is None or self._post_look is None:
+            return
+        values = post_values(scene.post)
+        current = self._post_dict(values)
+        match = next(
+            (k for k, (_l, _d, v) in SCENE_LOOKS.items() if self._post_dict(post_values(v)) == current), ""
+        )
+        self._updating = True
+        try:
+            for name, sb in self._post_editors.items():
+                sb.setValue(values[name])
+            self._post_look.setCurrentIndex(max(0, self._post_look.findData(match)))
+        finally:
+            self._updating = False
 
     def _build_metadata_form(self) -> None:
         """Métadonnées scientifiques du projet (SCI-07/08) : représentation, échelle, notes, sources."""
@@ -437,7 +506,8 @@ class InspectorDock(QWidget):
             sb = QDoubleSpinBox()
             sb.setRange(spec.min if spec.min is not None else -1e6, spec.max if spec.max is not None else 1e6)
             sb.setDecimals(2)
-            sb.setSingleStep(0.1 if path.startswith("scale") or path == "opacity" else 1.0)
+            fine = path.startswith("scale") or path == "opacity" or (spec.max is not None and spec.max <= 4)
+            sb.setSingleStep(0.1 if fine else 1.0)
             sb.setKeyboardTracking(False)
             sb.valueChanged.connect(lambda v, p=path: self._commit(p, float(v)))
             return sb
@@ -520,6 +590,7 @@ class InspectorDock(QWidget):
             self._refresh_multi()
             return
         if self._node_id is None:
+            self._refresh_post()
             self._refresh_metadata()
             return
         scene = self.document.scene
@@ -580,8 +651,8 @@ class InspectorDock(QWidget):
                 return st.opacity
             if path.startswith("params."):
                 return st.params.get(path[7:])
-            if path.startswith("style."):
-                return st.style.get(path[6:])
+            if path.startswith("style.") and st.style.get(path[6:]) is not None:
+                return st.style.get(path[6:])  # absent (effet jamais réglé) : valeur par défaut ci-dessous
         if path == "name":
             return node.name
         if path == "visible":

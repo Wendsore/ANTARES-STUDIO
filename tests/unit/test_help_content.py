@@ -129,3 +129,22 @@ def test_run_navigation_is_bounded() -> None:
     run.go(999, ctx)
     assert run.index == len(tut.steps) - 1
     assert Path(topics.topic_path(tut.help_topic)).is_file()
+
+
+def test_post_production_sections_list_the_real_catalogues() -> None:
+    from antares_studio.audio.sfx import SOUNDS
+    from antares_studio.domain.effects import EFFECT_PRESETS, OBJECT_LOOKS, SCENE_LOOKS
+    from antares_studio.rendering.plan import PROFILES
+    from antares_studio.timeline.presets import PRESETS
+
+    effects = topics.topic_markdown("effets-et-filtres")
+    assert all(f"**{label}**" in effects for label, _d, _v in OBJECT_LOOKS.values())
+    assert all(f"**{label}**" in effects for label, _d, _v in SCENE_LOOKS.values())
+    assert all(k in PRESETS and f"**{PRESETS[k].label}**" in effects for k in EFFECT_PRESETS)
+    sounds = topics.topic_markdown("bruitages")
+    assert all(f"**{s.label}**" in sounds for s in SOUNDS.values())
+    export = topics.topic_markdown("export-video")
+    assert all(f"`{pid}`" in export for pid in PROFILES)
+    assert all(f"`{pid}`" in topics.raw_markdown("ligne-de-commande") for pid in PROFILES)
+    assert topics.search("lueur")[0][0].id == "effets-et-filtres"
+    assert topics.search("bruitage")[0][0].id == "bruitages"

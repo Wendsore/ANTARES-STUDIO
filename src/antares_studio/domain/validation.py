@@ -6,6 +6,7 @@ import math
 from dataclasses import dataclass
 
 from antares_studio.domain.colors import is_color
+from antares_studio.domain.effects import EFFECTS_BY_NAME, SCENE_POST_BY_NAME
 from antares_studio.domain.ids import is_valid_id
 from antares_studio.domain.kinds import KINDS, check_param_value, spec_for
 from antares_studio.domain.model import AUDIO_ROLES, EASINGS, TRANSITIONS, Project, Scene
@@ -93,6 +94,12 @@ def validate_scene(scene: Scene, prefix: str = "scene") -> list[ValidationIssue]
                 err = check_param_value(ps, node.style[ps.name])
                 if err:
                     issues.append(ValidationIssue(f"{p}.style.{ps.name}", err))
+        for name, value in node.style.items():
+            fx = EFFECTS_BY_NAME.get(name)
+            if fx is not None:
+                err = check_param_value(fx, value)
+                if err:
+                    issues.append(ValidationIssue(f"{p}.style.{name}", err))
     # références parent et cycles
     for ni, node in enumerate(scene.nodes):
         if node.parent_id is not None:
@@ -151,6 +158,11 @@ def validate_scene(scene: Scene, prefix: str = "scene") -> list[ValidationIssue]
         or tr.duration_frames < 1
     ):
         issues.append(ValidationIssue(f"{prefix}.transition.duration_frames", "durée entière >= 1 attendue"))
+    for name, value in scene.post.items():
+        post_spec = SCENE_POST_BY_NAME.get(name)
+        err = check_param_value(post_spec, value) if post_spec is not None else "filtre inconnu"
+        if err:
+            issues.append(ValidationIssue(f"{prefix}.post.{name}", err))
     seen_sub: set[str] = set()
     for si2, sub in enumerate(scene.subtitles):
         sp = f"{prefix}.subtitles[{si2}]"

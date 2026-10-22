@@ -1,6 +1,6 @@
 # Narration audio
 
-La voix est le cœur d'une vidéo pédagogique. ANTARES **importe** votre enregistrement ; il n'enregistre pas le micro lui-même.
+La voix est le cœur d'une vidéo pédagogique. ANTARES **enregistre** votre voix au micro ou **importe** un enregistrement fait ailleurs. Pour les bruitages et les ambiances, voir [Bruitages et ambiances](bruitages.md).
 
 ## Enregistrer sa voix
 
@@ -45,6 +45,10 @@ Dans le tableau de l'onglet *Audio* :
 ## Musique baissée sous la voix
 
 Donnez le rôle **Musique** à la musique de fond. Avec la case **Baisser la musique sous la voix** (cochée par défaut), l'export atténue la musique d'environ 15 dB pendant que les pistes **Voix** parlent, puis la remonte en douceur. Rien n'est modifié dans les fichiers.
+
+## Volume normalisé
+
+Avec la case **Volume normalisé** (cochée par défaut), l'export ramène le mélange de la scène à **−14 LUFS**, le niveau de référence de YouTube et Spotify (norme EBU R128), et limite les crêtes à −1,5 dB : une voix enregistrée trop bas devient audible, une musique trop forte ne sature plus, et toutes vos vidéos sonnent aussi fort. Décochez-la si vous avez déjà mixé le son ailleurs. Chaque scène est normalisée séparément.
 
 ## Écouter
 

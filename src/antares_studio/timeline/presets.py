@@ -124,6 +124,62 @@ PRESETS: dict[str, PresetSpec] = {
             _COMMON + (_EASING,),
         ),
         PresetSpec(
+            "shake",
+            "Secousse",
+            "Tremblement bref autour de la position actuelle (impact, explosion, séisme), qui s'amortit "
+            "et revient exactement à sa place.",
+            _COMMON[:1]
+            + (
+                PresetParam("duration_frames", "Durée (images)", "int", 18, min=2),
+                PresetParam("amplitude", "Amplitude (px)", "float", 14.0, min=0),
+                PresetParam("jolts", "Nombre d'à-coups", "int", 10, min=2, max=200),
+            ),
+        ),
+        PresetSpec(
+            "flash",
+            "Éclat lumineux",
+            "La lueur de l'objet s'allume puis s'éteint : explosion, supernova, idée qui jaillit.",
+            _COMMON[:1]
+            + (
+                PresetParam("duration_frames", "Durée (images)", "int", 24, min=2),
+                PresetParam("radius", "Rayon de la lueur (px)", "float", 60.0, min=1),
+                PresetParam("strength", "Intensité maximale", "float", 2.5, min=0.1, max=4),
+            ),
+        ),
+        PresetSpec(
+            "blink",
+            "Clignotement",
+            "L'objet s'allume et s'éteint plusieurs fois : signal, alerte, balise.",
+            _COMMON
+            + (
+                PresetParam("repeats", "Clignotements", "int", 3, min=1),
+                PresetParam("dim", "Opacité éteinte (0 → 1)", "float", 0.15, min=0, max=1),
+            ),
+        ),
+        PresetSpec(
+            "focus",
+            "Mise au point",
+            "L'objet passe du flou au net (ou l'inverse) : attirer le regard, changer de plan.",
+            _COMMON
+            + (
+                PresetParam("blur", "Flou de départ (px)", "float", 16.0, min=0, max=200),
+                PresetParam("reverse", "Du net au flou", "bool", False),
+                _EASING,
+            ),
+        ),
+        PresetSpec(
+            "glow_pulse",
+            "Pulsation lumineuse",
+            "La lueur respire régulièrement : étoile variable, pulsar, élément à surveiller.",
+            _COMMON
+            + (
+                PresetParam("radius", "Rayon de la lueur (px)", "float", 30.0, min=1),
+                PresetParam("low", "Intensité basse", "float", 0.3, min=0, max=4),
+                PresetParam("high", "Intensité haute", "float", 1.8, min=0, max=4),
+                PresetParam("repeats", "Pulsations", "int", 3, min=1),
+            ),
+        ),
+        PresetSpec(
             "kepler",
             "Orbite de Kepler (modélisation)",
             "Ellipse képlérienne autour d'un corps placé au foyer (lois de Kepler, deux corps) ; "
@@ -223,7 +279,63 @@ def apply_preset(preset_id: str, node: Node, params: dict[str, Any] | None = Non
         tracks.append(t)
     elif preset_id == "kepler":
         tracks += _kepler_tracks(node, p, start, dur)
+    elif preset_id == "shake":
+        tracks += _shake_tracks(node, p, start, dur)
+    elif preset_id == "flash":
+        radius, peak = float(p["radius"]), float(p["strength"])
+        glow, strength = Track(node.id, "style.fx_glow"), Track(node.id, "style.fx_glow_strength")
+        glow.set_keyframe(start, radius, "linear")
+        glow.set_keyframe(end, radius, "linear")
+        rise = start + max(1, dur // 4)
+        strength.set_keyframe(start, 0.0, "ease_out")
+        strength.set_keyframe(rise, peak, "ease_in_out")
+        strength.set_keyframe(end, 0.0, "linear")
+        tracks += [glow, strength]
+    elif preset_id == "blink":
+        reps, dim = int(p["repeats"]), float(p["dim"])
+        t = Track(node.id, "opacity")
+        seg = dur / (2 * reps)
+        for i in range(2 * reps + 1):
+            # paliers nets : éteint sur les demi-périodes impaires, rallumé à la fin
+            t.set_keyframe(start + int(round(i * seg)), node.opacity * (dim if i % 2 == 1 else 1.0), "step")
+        tracks.append(t)
+    elif preset_id == "focus":
+        blur = float(p["blur"])
+        a, b = (0.0, blur) if bool(p["reverse"]) else (blur, 0.0)
+        t = Track(node.id, "style.fx_blur")
+        t.set_keyframe(start, a, easing)
+        t.set_keyframe(end, b, easing)
+        tracks.append(t)
+    elif preset_id == "glow_pulse":
+        reps, low, high = int(p["repeats"]), float(p["low"]), float(p["high"])
+        glow, strength = Track(node.id, "style.fx_glow"), Track(node.id, "style.fx_glow_strength")
+        glow.set_keyframe(start, float(p["radius"]), "linear")
+        glow.set_keyframe(end, float(p["radius"]), "linear")
+        seg = dur / (2 * reps)
+        for i in range(2 * reps + 1):
+            strength.set_keyframe(start + int(round(i * seg)), high if i % 2 == 1 else low, "ease_in_out")
+        tracks += [glow, strength]
     return tracks
+
+
+def _shake_tracks(node: Node, p: dict[str, Any], start: int, dur: int) -> list[Track]:
+    """Écarts pseudo-aléatoires reproductibles (graine : identifiant de l'objet), amortis linéairement ;
+    la dernière clé ramène l'objet à sa position exacte."""
+    import random
+
+    rng = random.Random(f"shake:{node.id}")
+    amp = float(p["amplitude"])
+    n = max(2, min(dur, int(p["jolts"])))  # jamais plus d'à-coups que d'images
+    x0, y0 = node.position
+    tx, ty = Track(node.id, "position.x"), Track(node.id, "position.y")
+    for i in range(n + 1):
+        f = start + int(round(i * dur / n))
+        k = amp * (1.0 - i / n)
+        dx = 0.0 if i in (0, n) else rng.uniform(-k, k)
+        dy = 0.0 if i in (0, n) else rng.uniform(-k, k)
+        tx.set_keyframe(f, x0 + dx, "linear")
+        ty.set_keyframe(f, y0 + dy, "linear")
+    return [tx, ty]
 
 
 def _kepler_tracks(node: Node, p: dict[str, Any], start: int, dur: int) -> list[Track]:

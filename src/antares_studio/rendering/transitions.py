@@ -10,7 +10,9 @@ from __future__ import annotations
 from PySide6.QtCore import QRectF
 from PySide6.QtGui import QColor, QImage, QPainter
 
+from antares_studio.domain.effects import post_is_neutral
 from antares_studio.domain.model import Project
+from antares_studio.rendering.effects import apply_scene_post
 from antares_studio.rendering.qt_painter import AssetResolver, ImageCache, render_state_to_image
 from antares_studio.timeline.easing import ease_in_out
 from antares_studio.timeline.evaluator import SceneState, evaluate
@@ -75,15 +77,20 @@ class FrameRenderer:
     de la scène précédente (``token`` : version du projet, pour invalider après une modification)."""
 
     def __init__(
-        self, project: Project, assets: AssetResolver | None = None, cache: ImageCache | None = None
+        self,
+        project: Project,
+        assets: AssetResolver | None = None,
+        cache: ImageCache | None = None,
+        transparent: bool = False,
     ):
         self.project = project
         self.assets = assets
         self.cache = cache or ImageCache()
+        self.transparent = transparent  # fond de scène non peint (export ProRes 4444, séquence PNG)
         self._previous: dict[tuple[str | None, int, int, int, bool], QImage] = {}
 
     def _state_image(self, state: SceneState, w: int, h: int) -> QImage:
-        return render_state_to_image(
+        img = render_state_to_image(
             state,
             self.project.canvas,
             w,
@@ -91,7 +98,12 @@ class FrameRenderer:
             self.assets,
             self.cache,
             subtitle_style=self.project.subtitle_style,
+            paint_background=not self.transparent,
         )
+        scene = self.project.find_scene(state.scene_id)
+        if scene is not None and not post_is_neutral(scene.post):
+            img = apply_scene_post(img, scene.post, scene.id, state.frame)
+        return img
 
     def previous_image(
         self, scene_id: str | None, w: int, h: int, use_camera: bool = True, token: int = 0
@@ -101,7 +113,7 @@ class FrameRenderer:
         if img is None:
             if scene_id is None:
                 img = QImage(w, h, QImage.Format.Format_RGBA8888)
-                img.fill(QColor(0, 0, 0))
+                img.fill(QColor(0, 0, 0, 0 if self.transparent else 255))
             else:
                 prev = self.project.scene(scene_id)
                 img = self._state_image(

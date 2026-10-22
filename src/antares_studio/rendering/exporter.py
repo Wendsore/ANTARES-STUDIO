@@ -56,35 +56,37 @@ class RenderResult:
 # Atténuation de la musique sous la voix : compresseur déclenché par la narration (≈ -15 dB pendant
 # la parole, retour en 0,35 s). Seuils choisis pour une voix normalisée autour de -20 dBFS.
 DUCKING_FILTER = "sidechaincompress=threshold=0.02:ratio=12:attack=15:release=350:makeup=1"
+# Volume normalisé (EBU R128) : −14 LUFS intégrés, comme YouTube et Spotify ; crêtes vraies ≤ −1,5 dBTP.
+# loudnorm suréchantillonne en interne : retour explicite à 48 kHz.
+LOUDNESS_FILTER = "loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000"
 
 
 def _build_ffmpeg_command(ffmpeg: Path, plan: RenderPlan, tmp_output: Path) -> list[str]:
     profile = plan.profile
     rate = plan.output_fps
-    cmd = [
-        str(ffmpeg),
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-nostdin",
-        "-y",
-        "-f",
-        "rawvideo",
-        "-pix_fmt",
-        "rgba",
-        "-s",
-        f"{plan.width}x{plan.height}",
-        "-r",
-        f"{rate.numerator}/{rate.denominator}",
-        "-i",
-        "pipe:0",
-    ]
+    cmd = [str(ffmpeg), "-hide_banner", "-loglevel", "error", "-nostdin", "-y"]
+    first_audio = 0
+    if profile.has_video:
+        cmd += [
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgba",
+            "-s",
+            f"{plan.width}x{plan.height}",
+            "-r",
+            f"{rate.numerator}/{rate.denominator}",
+            "-i",
+            "pipe:0",
+        ]
+        first_audio = 1
+    video_map = ["-map", "0:v:0"] if profile.has_video else []
     filters: list[str] = []
     labels: list[str] = []
     roles: list[str] = []
     for i, clip in enumerate(plan.audio):
         cmd += ["-i", clip.path]
-        idx = i + 1
+        idx = i + first_audio
         chain = [f"[{idx}:a]"]
         parts: list[str] = []
         if clip.in_seconds > 0 or clip.out_seconds is not None:
@@ -119,15 +121,20 @@ def _build_ffmpeg_command(ffmpeg: Path, plan: RenderPlan, tmp_output: Path) -> l
             filters.append(f"[musique][voixcmdp]{DUCKING_FILTER}[musiquebasse]")
             labels = ["[voixsortie]", "[musiquebasse]", *others]
         # la vidéo est maître : l'audio est complété par du silence (apad) puis coupé à la durée (-t)
-        mix = "".join(labels) + f"amix=inputs={len(labels)}:normalize=0:duration=longest[mix];[mix]apad[aout]"
+        level = f"{LOUDNESS_FILTER}," if plan.loudness else ""
+        mix = (
+            "".join(labels)
+            + f"amix=inputs={len(labels)}:normalize=0:duration=longest[mix];[mix]{level}apad[aout]"
+        )
         filters.append(mix)
-        cmd += ["-filter_complex", ";".join(filters), "-map", "0:v:0", "-map", "[aout]"]
-        cmd += ["-c:a", profile.audio_codec, "-b:a", profile.audio_bitrate]
+        cmd += ["-filter_complex", ";".join(filters), *video_map, "-map", "[aout]"]
+        cmd += profile.ffmpeg_audio_args()
     elif plan.silent_audio:
         # piste silencieuse : toutes les scènes d'un export complet ont la même structure de flux
         cmd += ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"]
-        cmd += ["-map", "0:v:0", "-map", "1:a:0", "-c:a", profile.audio_codec, "-b:a", profile.audio_bitrate]
-    cmd += profile.ffmpeg_video_args()
+        cmd += [*video_map, "-map", f"{first_audio}:a:0", *profile.ffmpeg_audio_args()]
+    if profile.has_video:
+        cmd += profile.ffmpeg_video_args(plan.transparent)
     cmd += ["-t", f"{plan.duration_seconds:.6f}", "-f", profile.container, str(tmp_output)]
     return cmd
 
@@ -174,6 +181,8 @@ def _frame_bytes(renderer: FrameRenderer, plan: RenderPlan, frame: int) -> bytes
         p = QPainter(img)
         p.drawImage(QRectF(x, y, w, h), inner)
         p.end()
+    if img.format() != QImage.Format.Format_RGBA8888:
+        img = img.convertToFormat(QImage.Format.Format_RGBA8888)  # FFmpeg attend un alpha non prémultiplié
     data = bytes(img.constBits())
     if len(data) != plan.width * plan.height * 4:
         raise RenderError("taille d'image inattendue (stride non contigu)")
@@ -206,6 +215,10 @@ def export_video(
     for clip in plan.audio:
         if not Path(clip.path).is_file():
             raise RenderError(f"Fichier audio introuvable : {clip.path}")
+    if plan.profile.is_sequence:
+        return _export_sequence(
+            project, plan, output, progress, cancel, assets, ffmpeg, ffprobe, write_manifest
+        )
 
     fd, tmp_name = tempfile.mkstemp(
         prefix=f".{output.stem}-", suffix=f".{plan.profile.container}.part", dir=output.parent
@@ -215,21 +228,24 @@ def export_video(
     cancel = cancel or threading.Event()
     encoder = ff.FrameEncoder(_build_ffmpeg_command(ffmpeg, plan, tmp_output))
     t0 = time.perf_counter()
-    renderer = FrameRenderer(project, assets, ImageCache())
-    scene = project.scene(plan.scene_id)
+    renderer = FrameRenderer(project, assets, ImageCache(), transparent=plan.transparent)
     try:
         encoder.start()
-        total = plan.total_frames
+        total = plan.total_frames if plan.profile.has_video else 0
         for i in range(total):
             if cancel.is_set():
                 raise RenderCancelledError("export annulé")
             encoder.write(_frame_bytes(renderer, plan, plan.start_frame + i * plan.frame_step))
             if progress:
                 progress(i + 1, total)
+        if cancel.is_set():
+            raise RenderCancelledError("export annulé")
         rc = encoder.finish()
         if rc != 0:
             raise RenderError(f"FFmpeg a échoué (code {rc}).", encoder.stderr_text())
-        result = ff.probe(ffprobe, tmp_output)
+        if progress and not total:
+            progress(1, 1)
+        result = ff.probe(ffprobe, tmp_output, require_video=plan.profile.has_video)
         _verify(result, plan)
         os.replace(tmp_output, output)
     except RenderCancelledError:
@@ -244,7 +260,18 @@ def export_video(
         raise RenderError(f"Erreur pendant l'export : {exc}", encoder.stderr_text()) from exc
     elapsed = time.perf_counter() - t0
     manifest_path = output.with_suffix(output.suffix + ".manifest.json")
-    if scene.subtitles:
+    _write_companions(project, plan, output)
+    if write_manifest:
+        _write_manifest(
+            manifest_path, project, plan, result, elapsed, ffmpeg, ffprobe, credits_lines(project)
+        )
+    return RenderResult(output, manifest_path, result, elapsed, plan)
+
+
+def _write_companions(project: Project, plan: RenderPlan, output: Path) -> None:
+    """Sous-titres SRT (sauf bande-son seule) et crédits, à côté du fichier exporté."""
+    scene = project.scene(plan.scene_id)
+    if scene.subtitles and plan.profile.has_video:
         # fichier SRT compagnon (les sous-titres sont aussi incrustés dans l'image)
         srt_path = output.with_suffix(".srt")
         shifted = [s for s in scene.subtitles if s.end_frame > plan.start_frame]
@@ -258,8 +285,96 @@ def export_video(
     credits = credits_lines(project)
     # crédits et attributions à côté de la vidéo (master prompt §9.1) ; même base que la scène « Crédits »
     output.with_suffix(".credits.txt").write_text("\n".join(credits) + "\n", encoding="utf-8")
+
+
+SEQUENCE_PATTERN = "image_{:05d}.png"
+SEQUENCE_AUDIO = "bande-son.wav"
+
+
+def _export_sequence(
+    project: Project,
+    plan: RenderPlan,
+    output: Path,
+    progress: ProgressCallback | None,
+    cancel: threading.Event | None,
+    assets: AssetResolver | None,
+    ffmpeg: Path,
+    ffprobe: Path,
+    write_manifest: bool,
+) -> RenderResult:
+    """Séquence PNG : un dossier ``image_00000.png…`` (transparence possible) et, si la scène a du son,
+    la bande-son en WAV à côté des images. Le dossier est écrit à part puis mis en place d'un coup."""
+    from PySide6.QtGui import QImage
+
+    if output.exists() and (
+        not output.is_dir() or any(p.suffix not in (".png", ".wav") for p in output.iterdir())
+    ):
+        # jamais d'écrasement d'un dossier qui contient autre chose qu'une séquence exportée
+        raise RenderError(
+            f"{output} existe déjà et n'est pas une séquence d'images : choisissez un autre nom."
+        )
+    cancel = cancel or threading.Event()
+    tmp = Path(tempfile.mkdtemp(prefix=f".{output.name}-", suffix=".part", dir=output.parent))
+    t0 = time.perf_counter()
+    renderer = FrameRenderer(project, assets, ImageCache(), transparent=plan.transparent)
+    total = plan.total_frames
+    try:
+        for i in range(total):
+            if cancel.is_set():
+                raise RenderCancelledError("export annulé")
+            img = renderer.render(
+                plan.scene_id, plan.start_frame + i * plan.frame_step, plan.width, plan.height
+            )
+            img = img.convertToFormat(
+                QImage.Format.Format_RGBA8888 if plan.transparent else QImage.Format.Format_RGB888
+            )
+            if not img.save(str(tmp / SEQUENCE_PATTERN.format(i))):  # format déduit de l'extension .png
+                raise RenderError(f"Impossible d'écrire l'image {i} dans {tmp}.")
+            if progress:
+                progress(i + 1, total)
+        written = sorted(tmp.glob("image_*.png"))
+        check = QImage(str(written[-1])) if written else QImage()
+        if len(written) != total or (check.width(), check.height()) != (plan.width, plan.height):
+            raise RenderError(f"Séquence incomplète : {len(written)} images au lieu de {total}.")
+        if plan.audio:
+            sound = dataclasses.replace(
+                plan, profile_id="audio_wav", output_path=str(tmp / SEQUENCE_AUDIO), silent_audio=False
+            )
+            cmd = _build_ffmpeg_command(ffmpeg, sound, tmp / SEQUENCE_AUDIO)
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=3600, check=False, creationflags=ff._NO_WINDOW
+            )
+            if proc.returncode != 0:
+                raise RenderError(f"FFmpeg a échoué sur la bande-son (code {proc.returncode}).", proc.stderr)
+        old = None
+        if output.exists():
+            old = output.with_name(f".{output.name}-ancien")
+            shutil.rmtree(old, ignore_errors=True)
+            os.replace(output, old)
+        os.replace(tmp, output)
+        if old is not None:
+            shutil.rmtree(old, ignore_errors=True)
+    except BaseException as exc:
+        shutil.rmtree(tmp, ignore_errors=True)
+        if isinstance(exc, RenderError | RenderCancelledError | ff.FFmpegError):
+            raise
+        raise RenderError(f"Erreur pendant l'export : {exc}") from exc
+    elapsed = time.perf_counter() - t0
+    result = ff.ProbeResult(
+        width=plan.width,
+        height=plan.height,
+        fps=plan.output_fps,
+        nb_frames=total,
+        duration=plan.duration_seconds,
+        video_codec="png",
+        has_audio=bool(plan.audio),
+    )
+    manifest_path = output.with_name(output.name + ".manifest.json")
+    _write_companions(project, plan, output.with_name(output.name + ".png"))
     if write_manifest:
-        _write_manifest(manifest_path, project, plan, result, elapsed, ffmpeg, ffprobe, credits)
+        _write_manifest(
+            manifest_path, project, plan, result, elapsed, ffmpeg, ffprobe, credits_lines(project)
+        )
     return RenderResult(output, manifest_path, result, elapsed, plan)
 
 
@@ -281,6 +396,7 @@ def export_project(
     assets: AssetResolver | None = None,
     ffmpeg_path: str | None = None,
     scene_ids: list[str] | None = None,
+    transparent: bool = False,
 ) -> ProjectRenderResult:
     """Exporte les scènes à la suite (vidéo complète) : rendu par scène puis enchaînement sans ré-encodage.
 
@@ -293,6 +409,13 @@ def export_project(
     ids = scene_ids or [s.id for s in project.scenes]
     if not ids:
         raise RenderError("le projet ne contient aucune scène")
+    from antares_studio.rendering.plan import PROFILES
+
+    if PROFILES[profile_id].is_sequence:
+        raise RenderError(
+            "La séquence PNG s'exporte scène par scène (un dossier d'images par scène) : décochez "
+            "« Toutes les scènes à la suite »."
+        )
     ffmpeg = ff.require_ffmpeg(ffmpeg_path)
     ffprobe = ff.find_ffprobe(ffmpeg=ffmpeg)
     if ffprobe is None:
@@ -306,7 +429,11 @@ def export_project(
     plans: list[RenderPlan] = []
     for sid in ids:
         audio = audio_plans_for_scene(project, sid, assets)
-        plans.append(build_render_plan(project, sid, profile_id, "", audio=audio, silent_audio=not audio))
+        plans.append(
+            build_render_plan(
+                project, sid, profile_id, "", audio=audio, silent_audio=not audio, transparent=transparent
+            )
+        )
     total = sum(p.total_frames for p in plans)
     done = 0
     merged: list[Subtitle] = []
@@ -381,12 +508,16 @@ def export_project(
             raise RenderError(
                 f"FFmpeg a échoué lors de l'enchaînement (code {proc.returncode}).", proc.stderr
             )
-        result = ff.probe(ffprobe, tmp_output)
+        has_video = plans[0].profile.has_video
+        result = ff.probe(ffprobe, tmp_output, require_video=has_video)
         problems = []
-        if result.nb_frames != total:
+        if has_video and result.nb_frames != total:
             problems.append(f"{result.nb_frames} images au lieu de {total}")
         if (result.width, result.height) != (plans[0].width, plans[0].height):
             problems.append("résolution inattendue")
+        expected = sum(p.duration_seconds for p in plans)
+        if not has_video and abs(result.duration - expected) > 0.1 * len(plans):
+            problems.append(f"durée {result.duration:.2f} s au lieu de {expected:.2f} s")
         if plans[0].profile.has_audio and not result.has_audio:
             problems.append("piste audio absente")
         if problems:
@@ -443,17 +574,28 @@ def _concat_args(profile: RenderProfile) -> list[str]:
 
 
 def _check_encoders(ffmpeg: Path, profile: RenderProfile) -> None:
-    needed = [profile.video_codec] + ([profile.audio_codec] if profile.has_audio else [])
+    video = [profile.video_codec] if profile.has_video and not profile.is_sequence else []  # PNG : par Qt
+    needed = video + ([profile.audio_codec] if profile.has_audio else [])
     for codec in needed:
         if not ff.has_encoder(ffmpeg, codec):
             raise RenderError(
                 f"L'encodeur « {codec} » est absent de votre FFmpeg. "
-                "Installez un FFmpeg complet (libx264, libvpx-vp9, libopus) ou choisissez un autre profil."
+                "Installez un FFmpeg complet (libx264, libvpx-vp9, libopus, libmp3lame, prores_ks) ou "
+                "choisissez un autre profil."
             )
 
 
 def _verify(result: ff.ProbeResult, plan: RenderPlan) -> None:
     problems = []
+    if not plan.profile.has_video:
+        # bande-son seule : durée de la scène, à une trame audio près (MP3 : ~26 ms de remplissage)
+        if not result.has_audio:
+            problems.append("piste audio absente")
+        elif abs(result.duration - plan.duration_seconds) > 0.1:
+            problems.append(f"durée {result.duration:.2f} s au lieu de {plan.duration_seconds:.2f} s")
+        if problems:
+            raise RenderError("Le fichier exporté ne correspond pas au plan : " + " ; ".join(problems))
+        return
     if (result.width, result.height) != (plan.width, plan.height):
         problems.append(f"résolution {result.width}x{result.height} au lieu de {plan.width}x{plan.height}")
     if result.nb_frames != plan.total_frames:
@@ -473,8 +615,19 @@ def _check_free_space(folder: Path, plan: RenderPlan) -> None:
         usage = shutil.disk_usage(folder)
     except OSError:
         return
-    # estimation prudente : 2 Mo/s à 1080p crf 18, ×4 de marge, minimum 50 Mo
-    needed = max(50 * 1024 * 1024, int(plan.duration_seconds * 2 * 1024 * 1024 * 4))
+    # estimation prudente, ×4 de marge, minimum 50 Mo : 2 Mo/s à 1080p crf 18, ProRes ~30 Mo/s,
+    # PNG ~3 Mo par image ; proportionnelle au nombre de pixels
+    profile = plan.profile
+    pixels = max(1.0, plan.width * plan.height / (1920 * 1080))
+    if profile.is_sequence:
+        rate = 3.0 * float(plan.output_fps) * pixels
+    elif profile.video_codec == "prores_ks":
+        rate = 30.0 * pixels
+    elif not profile.has_video:
+        rate = 0.2
+    else:
+        rate = 2.0 * pixels
+    needed = max(50 * 1024 * 1024, int(plan.duration_seconds * rate * 1024 * 1024 * 4))
     if usage.free < needed:
         raise RenderError(
             f"Espace disque insuffisant dans {folder} : {usage.free // (1024 * 1024)} Mo libres, "

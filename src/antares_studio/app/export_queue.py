@@ -80,6 +80,7 @@ class ExportJob:
     message: str = ""
     result: RenderResult | ProjectRenderResult | None = None
     cancel: threading.Event = field(default_factory=threading.Event)
+    transparent: bool = False  # toutes les scènes : fond non peint (profils à canal alpha)
 
     @classmethod
     def from_document(
@@ -130,6 +131,7 @@ class RenderWorker(QObject):
         ffmpeg_path: str,
         whole_project: tuple[str, str] | None = None,  # (profil, fichier de sortie) : toutes les scènes
         cancel: threading.Event | None = None,
+        transparent: bool = False,
     ):
         super().__init__()
         self.project = project
@@ -138,6 +140,7 @@ class RenderWorker(QObject):
         self.ffmpeg_path = ffmpeg_path
         self.whole_project = whole_project
         self.cancel = cancel or threading.Event()
+        self.transparent = transparent
 
     def run(self) -> None:
         try:
@@ -151,6 +154,7 @@ class RenderWorker(QObject):
                     cancel=self.cancel,
                     assets=self.assets,
                     ffmpeg_path=self.ffmpeg_path or None,
+                    transparent=self.transparent,
                 )
             else:
                 assert self.plan is not None
@@ -228,7 +232,9 @@ class ExportQueue(QObject):
         self._current = job
         job.status = "running"
         whole = (job.whole_project_profile, str(job.output_path)) if job.whole_project_profile else None
-        self._worker = RenderWorker(job.project, job.assets, job.plan, job.ffmpeg_path, whole, job.cancel)
+        self._worker = RenderWorker(
+            job.project, job.assets, job.plan, job.ffmpeg_path, whole, job.cancel, transparent=job.transparent
+        )
         self._thread = QThread(self)
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
