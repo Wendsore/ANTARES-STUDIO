@@ -227,7 +227,14 @@ class Projected:
 
 
 def project_solid(
-    solid: Solid, yaw: float, pitch: float, roll: float, size: float, persp: float
+    solid: Solid,
+    yaw: float,
+    pitch: float,
+    roll: float,
+    size: float,
+    persp: float,
+    light: Array | None = None,
+    ambient: float = 0.3,
 ) -> Projected:
     v = solid.vertices @ rotation3(yaw, pitch, roll).T * (size / 2)
     tri = v[solid.triangles]
@@ -243,9 +250,20 @@ def project_solid(
     else:
         visible = normals[:, 2] > 0
         screen = np.stack([v[:, 0], -v[:, 1]], axis=1)
-    light = 0.3 + 0.7 * np.clip(normals @ LIGHT, 0.0, 1.0)
+    lv = LIGHT if light is None else light
+    shade = ambient + (1.0 - ambient) * np.clip(normals @ lv, 0.0, 1.0)
     order = np.argsort(centers[:, 2], kind="stable")
-    return Projected(screen, visible, order, light)
+    return Projected(screen, visible, order, shade)
+
+
+def _light(params: dict[str, Any]) -> Array | None:
+    """Direction de la lumière des paramètres ; ``None`` (lumière fixe d'origine) s'ils sont absents."""
+    if "light_az_deg" not in params and "light_el_deg" not in params:
+        return None
+    a = math.radians(float(params.get("light_az_deg", -29.74488129694223)))
+    e = math.radians(float(params.get("light_el_deg", 36.65693295448205)))
+    out: Array = np.array([math.sin(a) * math.cos(e), math.sin(e), math.cos(a) * math.cos(e)])
+    return out
 
 
 def _poly(screen: Array, idx: Any) -> QPolygonF:
@@ -266,6 +284,8 @@ def paint_solid(painter: QPainter, params: dict[str, Any], style: dict[str, Any]
         float(params.get("roll_deg", 0.0)),
         max(1.0, float(params.get("size", 300.0))),
         max(0.0, min(1.0, float(params.get("perspective", 0.0)))),
+        _light(params),
+        max(0.0, min(1.0, float(params.get("ambient", 0.3)))),
     )
     mode = str(params.get("render_mode", "shaded_edges"))
     fill = qcolor(style.get("fill", "#2677B8"))

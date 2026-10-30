@@ -321,8 +321,10 @@ def test_object_variants_are_valid() -> None:
         kind, label, forced = resolve_variant(ident)
         assert label and forced == params
         specs = {p.name: p for p in spec_for(kind).params}
+        styles = {p.name: p for p in spec_for(kind).style}
         for name, value in params.items():
-            assert check_param_value(specs[name], value) is None, (ident, name)
+            spec = styles[name[6:]] if name.startswith("style_") else specs[name]  # style imposé (phase 13)
+            assert check_param_value(spec, value) is None, (ident, name)
     assert resolve_variant("circle") == ("circle", "Cercle", {})
 
 

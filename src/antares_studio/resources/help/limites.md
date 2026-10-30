@@ -37,6 +37,15 @@ ANTARES Studio est en version de développement. Voici, honnêtement, ce qu'il n
 - Surfaces de fonctions z = f(x, y), axes 3D gradués ; solides qui s'interpénètrent (tri des faces sans tampon de profondeur).
 - Polices « à un seul trait » (écriture au stylo tracée trait par trait) : l'écriture progressive dessine le contour des lettres.
 
+## Astres, ondes et optique
+
+- Modèles 3D maillés des planètes : les astres sont des sphères texturées calculées par le logiciel (pas de relief ni de cratères en volume).
+- Les textures fournies ont une résolution de 2 048 × 1 024 : un astre très agrandi (plein écran en 4K) devient flou ; importez une texture plus fine comme *Texture personnelle*.
+- Le trou noir est une illustration : la déviation de la lumière n'est pas calculée par la relativité générale.
+- Les éléments d'optique ne calculent pas la réfraction ni la réflexion : placez les rayons vous-même.
+- Le ciel étoilé ne calcule pas l'heure ni le lieu d'observation (horizon) : choisissez le centre du champ en coordonnées célestes.
+- Pas de carte d'une région à grande échelle (pays seul, ville) : seuls les planisphères sont fournis.
+
 ## Exemples
 
 - Les exemples complets n'ont pas de voix : seuls les sous-titres portent le texte. Enregistrez votre narration au micro.

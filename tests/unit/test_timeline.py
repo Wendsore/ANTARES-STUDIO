@@ -153,10 +153,17 @@ def test_all_mvp_presets_generate_valid_tracks() -> None:
     formula = make_node("formula", "Équation")
     grid = make_node("grid", "Grille")
     solid = make_node("solid3d", "Cube")
-    scene.nodes += [chart, formula, grid, solid]
-    # chaque animation vise un objet qu'elle concerne (graphique, formule, grille, solide 3D)
+    planet = make_node("celestial", "Lune")
+    waves = make_node("waves", "Ondes")
+    ray = make_node("ray", "Rayon")
+    screen = make_node("impacts", "Écran")
+    detector = make_node("optic", "Détecteur")
+    scene.nodes += [chart, formula, grid, solid, planet, waves, ray, screen, detector]
+    # chaque animation vise un objet qu'elle concerne (graphique, formule, grille, solide 3D, astre…)
     targets = {"trace": chart, "morph": formula, "write": formula, "erase": formula, "spin3d": solid}
     targets |= {"linear_map": grid, "warp": grid, "wave_travel": grid}
+    targets |= {"time_flow": waves, "spin_body": planet, "moon_phases": planet, "tide_follow": planet}
+    targets |= {"photon_travel": ray, "impacts_build": screen, "detector_click": detector}
     for pid in PRESETS:
         tracks = apply_preset(pid, targets.get(pid, moon))
         assert tracks, pid

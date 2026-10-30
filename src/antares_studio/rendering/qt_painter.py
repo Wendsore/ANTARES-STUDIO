@@ -30,11 +30,31 @@ from antares_studio.domain.colors import is_color, parse_color
 from antares_studio.domain.effects import has_effects, supports_effects
 from antares_studio.domain.model import DEFAULT_SUBTITLE_STYLE, Canvas
 from antares_studio.rendering.backdrops import paint_backdrop
+from antares_studio.rendering.celestial import celestial_bounds, paint_celestial
+from antares_studio.rendering.cosmic import (
+    black_hole_bounds,
+    light_bounds,
+    paint_black_hole,
+    paint_light,
+    paint_particles,
+    particles_bounds,
+)
 from antares_studio.rendering.effects import paint_with_effects
 from antares_studio.rendering.formula_layout import formula_rect, paint_formula
 from antares_studio.rendering.gltf import GltfError, Mesh, load_mesh, project
 from antares_studio.rendering.grid import grid_rect, paint_grid
+from antares_studio.rendering.maps import map_bounds, paint_map
+from antares_studio.rendering.optics import (
+    impacts_bounds,
+    optic_bounds,
+    paint_impacts,
+    paint_optic,
+    paint_ray,
+    ray_bounds,
+)
+from antares_studio.rendering.sky import paint_sky, sky_bounds
 from antares_studio.rendering.solids import paint_solid
+from antares_studio.rendering.waves import paint_waves, waves_bounds
 from antares_studio.rendering.writing import is_partial, paint_units, text_units, write_amount
 from antares_studio.science.data import DataError, DataTable, histogram, load_csv, nice_ticks
 from antares_studio.timeline.evaluator import NodeState, SceneState
@@ -766,6 +786,27 @@ def _draw_solid3d(
     paint_solid(painter, node.params, node.style, qcolor)
 
 
+def _draw_celestial(
+    painter: QPainter, node: NodeState, assets: AssetResolver | None, cache: ImageCache
+) -> None:
+    texture = None
+    asset_id = str(node.params.get("texture_asset_id", ""))
+    if str(node.params.get("body", "")) == "custom" and assets is not None and asset_id:
+        texture = assets(asset_id)
+    paint_celestial(painter, node.params, node.style, qcolor, texture)
+
+
+def _painter_for(
+    fn: Callable[[QPainter, dict[str, Any], dict[str, Any], Any], None],
+) -> Callable[[QPainter, NodeState, AssetResolver | None, ImageCache], None]:
+    """Adapte un peintre « (painter, params, style, qcolor) » à la signature des dessinateurs."""
+
+    def draw(painter: QPainter, node: NodeState, assets: AssetResolver | None, cache: ImageCache) -> None:
+        fn(painter, node.params, node.style, qcolor)
+
+    return draw
+
+
 def _draw_group(painter: QPainter, node: NodeState, assets: AssetResolver | None, cache: ImageCache) -> None:
     return None
 
@@ -788,10 +829,33 @@ _DRAWERS: dict[str, Callable[[QPainter, NodeState, AssetResolver | None, ImageCa
     "model3d": _draw_model3d,
     "grid": _draw_grid,
     "solid3d": _draw_solid3d,
+    "celestial": _draw_celestial,
+    "world_map": _painter_for(paint_map),
+    "sky": _painter_for(paint_sky),
+    "waves": _painter_for(paint_waves),
+    "ray": _painter_for(paint_ray),
+    "optic": _painter_for(paint_optic),
+    "impacts": _painter_for(paint_impacts),
+    "particles": _painter_for(paint_particles),
+    "black_hole": _painter_for(paint_black_hole),
+    "light": _painter_for(paint_light),
     "group": _draw_group,
 }
 
 _DEFAULT_CACHE = ImageCache()
+
+_BOUNDS: dict[str, Callable[[dict[str, Any]], QRectF]] = {
+    "celestial": celestial_bounds,
+    "world_map": map_bounds,
+    "sky": sky_bounds,
+    "waves": waves_bounds,
+    "ray": ray_bounds,
+    "optic": optic_bounds,
+    "impacts": impacts_bounds,
+    "particles": particles_bounds,
+    "black_hole": black_hole_bounds,
+    "light": light_bounds,
+}
 
 
 def local_bounds(node: NodeState) -> QRectF:
@@ -847,6 +911,8 @@ def local_bounds(node: NodeState) -> QRectF:
         return QRectF(-s / 2, -s / 2, s, s)
     if k == "grid":
         return grid_rect(p)
+    if k in _BOUNDS:
+        return _BOUNDS[k](p)
     if k == "camera":  # cadre filmé, dans le repère de la scène
         zoom = max(0.05, float(p.get("zoom", 1.0)))
         w = float(p.get("view_width", 1920.0)) / zoom

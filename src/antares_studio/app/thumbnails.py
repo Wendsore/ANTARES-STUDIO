@@ -11,13 +11,27 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon, QImage, QPainter, QPixmap
 
 from antares_studio.app import icons
-from antares_studio.domain.kinds import resolve_variant, spec_for
+from antares_studio.domain.kinds import resolve_variant, spec_for, split_style
 from antares_studio.domain.model import Canvas, Node, Project, Scene
 from antares_studio.rendering.qt_painter import local_bounds, paint_scene_state, render_state_to_image
 from antares_studio.resources.templates import TEMPLATES, create_project
 from antares_studio.timeline.evaluator import evaluate
 
-RENDERED_KINDS = ("circle", "ellipse", "rect", "polygon", "star", "line", "arrow", "orbit_path", "solid3d")
+RENDERED_KINDS = (
+    "circle",
+    "ellipse",
+    "rect",
+    "polygon",
+    "star",
+    "line",
+    "arrow",
+    "orbit_path",
+    "solid3d",
+    "celestial",
+    "black_hole",
+    "optic",
+    "world_map",
+)
 KIND_ICONS: dict[str, str] = {
     "text": "type",
     "callout": "message-square-text",
@@ -29,6 +43,12 @@ KIND_ICONS: dict[str, str] = {
     "camera": "video",
     "model3d": "rotate-3d",
     "grid": "grid-3x3",
+    "sky": "star",
+    "waves": "activity",
+    "ray": "spline",
+    "impacts": "scan",
+    "particles": "sparkles",
+    "light": "lightbulb",
 }
 PRESET_ICONS: dict[str, str] = {
     "appear": "eye",
@@ -46,6 +66,13 @@ PRESET_ICONS: dict[str, str] = {
     "linear_map": "scale-3d",
     "warp": "magnet",
     "wave_travel": "activity",
+    "time_flow": "fast-forward",
+    "spin_body": "rotate-cw",
+    "moon_phases": "sun-moon",
+    "tide_follow": "orbit",
+    "photon_travel": "move-right",
+    "impacts_build": "scan",
+    "detector_click": "sparkles",
 }
 _kind_cache: dict[tuple[str, int, str], QIcon] = {}
 _template_cache: dict[tuple[str, int, int], QPixmap] = {}
@@ -53,8 +80,14 @@ _template_cache: dict[tuple[str, int, int], QPixmap] = {}
 
 def _single_node_project(ident: str) -> tuple[Project, Scene, Node]:
     kind, label, variant = resolve_variant(ident)
+    variant, variant_style = split_style(variant)
     spec = spec_for(kind)
-    node = Node.create(kind, label, style=spec.default_style(), params={**spec.default_params(), **variant})
+    node = Node.create(
+        kind,
+        label,
+        style={**spec.default_style(), **variant_style},
+        params={**spec.default_params(), **variant},
+    )
     if kind == "orbit_path":
         node.style["stroke"] = "#CFD8DC"
         node.style["stroke_width"] = 6.0

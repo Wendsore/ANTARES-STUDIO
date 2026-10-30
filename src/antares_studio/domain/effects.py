@@ -13,7 +13,7 @@ from typing import Any
 from antares_studio.domain.kinds import ParamSpec
 
 # objets sans dessin propre : pas d'effet (un groupe n'a pas d'image, la caméra cadre)
-NO_EFFECT_KINDS = frozenset({"group", "camera"})
+NO_EFFECT_KINDS = frozenset({"group", "camera", "light"})
 
 EFFECTS: tuple[ParamSpec, ...] = (
     ParamSpec("fx_blur", "float", 0.0, True, "Flou (px)", min=0, max=200),
