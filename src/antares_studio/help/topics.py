@@ -52,6 +52,12 @@ TOPICS: tuple[Topic, ...] = (
         "Écriture progressive, craie et styles d'écriture",
         "écrire lettre craie tableau noir police manuscrit machine à écrire 3blue1brown décor",
     ),
+    Topic(
+        "personnages",
+        "Créer",
+        "Personnages chibis : émotions, poses, tenues",
+        "personnage chibi présentateur émotion visage pose tenue avatar dialogue bulle ironique sceptique",
+    ),
     Topic("modeles", "Créer", "Modèles pédagogiques", "template gabarit"),
     Topic("animations", "Animer", "Animations prédéfinies", "preset orbite apparition"),
     Topic("images-cles", "Animer", "Images clés et Timeline", "keyframe clé lecture"),
@@ -375,6 +381,40 @@ def _datasets() -> str:
     return "\n".join(lines)
 
 
+def _characters() -> str:
+    from antares_studio.domain import characters as ch
+
+    def row(title: str, choices: tuple[tuple[str, str], ...]) -> str:
+        return f"- **{title}** ({len(choices)}) : " + ", ".join(label for _v, label in choices) + "."
+
+    lines = ["| Fiche de jeu | Émotion | Pose | Tenue | Coiffure |", "|---|---|---|---|---|"]
+    labels = {
+        key: dict(choices)
+        for key, choices in (
+            ("emotion", ch.EMOTION_CHOICES),
+            ("pose", ch.POSES),
+            ("outfit", ch.OUTFITS),
+            ("hair", ch.HAIRS),
+        )
+    }
+    for p in ch.PERSONALITIES:
+        cells = [labels[k][str(p.params[k])] for k in ("emotion", "pose", "outfit", "hair")]
+        lines.append(f"| **{p.label}** | " + " | ".join(cells) + " |")
+    lines += [
+        "",
+        row("Émotions", ch.EMOTION_CHOICES),
+        row("Poses", ch.POSES),
+        row("Regard", ch.GAZES),
+        row("Tenues", ch.OUTFITS),
+        row("Coiffures", ch.HAIRS),
+        row("Barbes", ch.BEARDS),
+        row("Lunettes", ch.GLASSES),
+        row("Couvre-chefs", ch.HATS),
+        row("Teints", ch.SKIN_CHOICES),
+    ]
+    return "\n".join(lines)
+
+
 GENERATED = {
     "objets": _objects,
     "animations": _animations,
@@ -393,4 +433,5 @@ GENERATED = {
     "astres": _bodies,
     "etoiles": _famous_stars,
     "jeux-de-donnees": _datasets,
+    "personnages": _characters,
 }

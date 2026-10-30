@@ -1146,6 +1146,105 @@ def build_night_sky(project: Project, scene: Scene) -> None:
     )
 
 
+def _bubble_track(node: Node, start: int, end: int, fade: int) -> Track:
+    """Bulle visible de ``start`` à ``end`` avec un fondu à l'entrée et à la sortie (une seule piste)."""
+    t = Track(node.id, "opacity")
+    t.set_keyframe(0, 0.0)
+    t.set_keyframe(start, 0.0)
+    t.set_keyframe(start + fade, 1.0)
+    t.set_keyframe(max(start + fade, end - fade), 1.0)
+    t.set_keyframe(end, 0.0)
+    return t
+
+
+def _switch_track(node: Node, prop: str, changes: list[tuple[int, str]]) -> Track:
+    """Changements d'émotion ou de pose en palier : chaque valeur tient jusqu'à la suivante."""
+    t = Track(node.id, f"params.{prop}")
+    for frame, value in changes:
+        t.set_keyframe(frame, value, "step")
+    return t
+
+
+def build_dialogue(project: Project, scene: Scene) -> None:
+    """Deux personnages dialoguent ; émotions, poses et bulles changent au fil de l'explication."""
+    from antares_studio.domain.characters import PERSONALITY_BY_ID
+
+    c = project.canvas
+    k = _scale(c)
+    d = scene.duration_frames
+    scene.background = "#16213A"
+    scene.backdrop = "starfield"
+
+    def character(pid: str, name: str, x: float, mirror: bool) -> Node:
+        p = PERSONALITY_BY_ID[pid]
+        styles = {f"style_{key}": v for key, v in p.style.items()}
+        return new_node(
+            "character", name, x, c.height * 0.6, **p.params, **styles, mirror=mirror, height=560 * k
+        )
+
+    prof = character("ingenieur", "L'ingénieur", c.width * 0.2, False)
+    doubt = character("sceptique", "Le sceptique", c.width * 0.8, True)
+    title = new_node(
+        "text",
+        "Titre",
+        c.width / 2,
+        70 * k,
+        text="Pourquoi voit-on toujours la même face de la Lune ?",
+        font_size=48 * k,
+        bold=True,
+    )
+    # (x, y en fraction du cadre, début et fin en fraction de la durée, texte) ; bulle près de celui qui parle
+    lines = [
+        (0.38, 0.22, 0.04, 0.27, "On voit toujours\nla même face de la Lune."),
+        (0.62, 0.22, 0.27, 0.52, "Donc la Lune ne tourne\npas sur elle-même ?"),
+        (
+            0.40,
+            0.22,
+            0.52,
+            0.78,
+            "Si ! Elle fait un tour\nen 27 jours environ…\nle temps d'un tour de la Terre.",
+        ),
+        (0.60, 0.22, 0.78, 1.0, "Elle tourne pile\nau bon rythme !"),
+    ]
+    scene.nodes += [prof, doubt, title]
+    fade = max(1, int(0.3 * c.fps))
+    for i, (fx, fy, t0, t1, text) in enumerate(lines):
+        bubble = new_node(
+            "callout", f"Réplique {i + 1}", c.width * fx, c.height * fy, text=text, font_size=34 * k
+        )
+        scene.nodes.append(bubble)
+        scene.tracks.append(_bubble_track(bubble, int(t0 * d), min(d, int(t1 * d)), fade))
+    at = [int(f * d) for f in (0.0, 0.27, 0.52, 0.78)]
+    scene.tracks += [
+        _switch_track(
+            prof,
+            "emotion",
+            [(at[0], "explique"), (at[1], "agacement"), (at[2], "explique"), (at[3], "fierte")],
+        ),
+        _switch_track(
+            prof, "pose", [(at[0], "explique"), (at[1], "bras_croises"), (at[2], "index"), (at[3], "hanches")]
+        ),
+        _switch_track(
+            doubt,
+            "emotion",
+            [(at[0], "doute"), (at[1], "ironie"), (at[2], "surprise"), (at[3], "enthousiasme")],
+        ),
+        _switch_track(
+            doubt, "pose", [(at[0], "menton"), (at[1], "haussement"), (at[2], "repos"), (at[3], "victoire")]
+        ),
+    ]
+    scene.tracks += apply_preset("appear", title, {"duration_frames": fade * 2})
+    add_sources(
+        project,
+        [
+            {
+                "label": "NASA — Earth's Moon, Facts : rotation synchrone (un tour sur elle-même par orbite)",
+                "url": "https://science.nasa.gov/moon/facts/",
+            }
+        ],
+    )
+
+
 TEMPLATES: dict[str, tuple[str, TemplateBuilder]] = {
     "intro": ("Introduction (titre et sous-titre)", build_intro),
     "moon_phases": ("Phases de la Lune (Soleil, Terre, Lune en orbite)", build_moon_phases),
@@ -1166,6 +1265,7 @@ TEMPLATES: dict[str, tuple[str, TemplateBuilder]] = {
     "solar_system": ("Les planètes du Système solaire", build_solar_system),
     "world_map": ("Planisphère (continents)", build_world_map),
     "night_sky": ("Ciel étoilé réel (Orion)", build_night_sky),
+    "dialogue": ("Dialogue de personnages (émotions et bulles)", build_dialogue),
     "credits": ("Crédits (sources, ressources, logiciel)", build_credits),
 }
 

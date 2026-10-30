@@ -31,6 +31,7 @@ from antares_studio.domain.effects import has_effects, supports_effects
 from antares_studio.domain.model import DEFAULT_SUBTITLE_STYLE, Canvas
 from antares_studio.rendering.backdrops import paint_backdrop
 from antares_studio.rendering.celestial import celestial_bounds, paint_celestial
+from antares_studio.rendering.chibi import chibi_bounds, paint_chibi
 from antares_studio.rendering.cosmic import (
     black_hole_bounds,
     light_bounds,
@@ -839,6 +840,7 @@ _DRAWERS: dict[str, Callable[[QPainter, NodeState, AssetResolver | None, ImageCa
     "particles": _painter_for(paint_particles),
     "black_hole": _painter_for(paint_black_hole),
     "light": _painter_for(paint_light),
+    "character": _painter_for(paint_chibi),
     "group": _draw_group,
 }
 
@@ -855,6 +857,7 @@ _BOUNDS: dict[str, Callable[[dict[str, Any]], QRectF]] = {
     "particles": particles_bounds,
     "black_hole": black_hole_bounds,
     "light": light_bounds,
+    "character": chibi_bounds,
 }
 
 

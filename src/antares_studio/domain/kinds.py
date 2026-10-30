@@ -5,6 +5,19 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from antares_studio.domain.characters import (
+    BEARDS,
+    EMOTION_CHOICES,
+    GAZES,
+    GLASSES,
+    HAIRS,
+    HATS,
+    OUTFITS,
+    PERSONALITIES,
+    POSES,
+    PROPORTIONS,
+    SKIN_CHOICES,
+)
 from antares_studio.domain.colors import is_color
 
 
@@ -729,6 +742,31 @@ KINDS: dict[str, KindSpec] = {
                 ParamSpec("shade_color", "color", "#000000", animatable=True, label="Pénombre : couleur"),
             ),
         ),
+        KindSpec(
+            "character",
+            "Personnage (chibi qui présente)",
+            # émotion, pose, regard, tenue et accessoires : listes animables en palier (ADR-0010)
+            params=(
+                ParamSpec("proportions", "str", "chibi", False, "Proportions", choices=PROPORTIONS),
+                ParamSpec("emotion", "str", "neutre", True, "Émotion", choices=EMOTION_CHOICES),
+                ParamSpec("pose", "str", "repos", True, "Pose (bras)", choices=POSES),
+                ParamSpec("gaze", "str", "face", True, "Regard", choices=GAZES),
+                ParamSpec("outfit", "str", "tshirt", True, "Tenue", choices=OUTFITS),
+                ParamSpec("glasses", "str", "aucune", True, "Lunettes", choices=GLASSES),
+                ParamSpec("hat", "str", "aucun", True, "Couvre-chef", choices=HATS),
+                ParamSpec("hair", "str", "court", False, "Coiffure", choices=HAIRS),
+                ParamSpec("beard", "str", "aucune", False, "Barbe", choices=BEARDS),
+                ParamSpec("skin", "str", "fonce", False, "Teint", choices=SKIN_CHOICES),
+                ParamSpec("mirror", "bool", False, True, "Tourné vers la gauche (miroir)"),
+                ParamSpec("height", "float", 420.0, True, "Hauteur à l'écran", min=10),
+            ),
+            style=(
+                ParamSpec("fill", "color", "#E07A2E", animatable=True, label="Tenue : couleur principale"),
+                ParamSpec("accent", "color", "#2E5E8C", animatable=True, label="Tenue : couleur d'accent"),
+                ParamSpec("hair_color", "color", "#1B120C", animatable=True, label="Couleur des cheveux"),
+                ParamSpec("hat_color", "color", "#F4F4F2", animatable=True, label="Couleur du couvre-chef"),
+            ),
+        ),
         KindSpec("group", "Groupe", container=True),
         KindSpec(
             "camera",
@@ -926,8 +964,17 @@ def _physics_variants() -> dict[str, tuple[str, dict[str, Any]]]:
     }
 
 
+def _character_variants() -> dict[str, tuple[str, dict[str, Any]]]:
+    """Une variante par fiche de jeu : apparence et attitude de départ."""
+    return {
+        f"character:{p.id}": (p.label, {**p.params, **{f"style_{k}": v for k, v in p.style.items()}})
+        for p in PERSONALITIES
+    }
+
+
 OBJECT_VARIANTS.update(_astro_variants())
 OBJECT_VARIANTS.update(_physics_variants())
+OBJECT_VARIANTS.update(_character_variants())
 
 
 def split_style(params: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
