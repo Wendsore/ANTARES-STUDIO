@@ -665,6 +665,487 @@ def build_solids(project: Project, scene: Scene) -> None:
         scene.tracks += apply_preset("spin3d", node, {"duration_frames": d, "turns": 1.0, "tilt_deg": 20.0})
 
 
+def _orbit_angle_track(
+    node_id: str, prop: str, start: int, dur: int, a0: float, turns: float, offset: float = 0.0
+) -> Track:
+    """Angle (°) qui suit l'orbite du preset « orbit » (sens trigonométrique à l'écran, y vers le bas)."""
+    track = Track(node_id, prop)
+    n = max(2, min(dur, int(round(72 * abs(turns)))))
+    for i in range(n + 1):
+        u = i / n
+        track.set_keyframe(start + int(round(u * dur)), a0 - 360.0 * turns * u + offset, "linear")
+    return track
+
+
+def build_lunar_phases_real(project: Project, scene: Scene) -> None:
+    """Phases de la Lune avec les vrais astres : vue d'en haut (Lune toujours à moitié éclairée par le
+    Soleil) et, en médaillon, la Lune vue depuis la Terre, dont la phase suit l'orbite."""
+    c = project.canvas
+    k = _scale(c)
+    scene.background = "#03050C"
+    scene.backdrop = "starfield"
+    cx, cy = c.width * 0.42, c.height * 0.52
+    d = scene.duration_frames
+    sun_light = new_node(
+        "light", "Lumière du Soleil", -200 * k, cy, mode="halo", radius=900 * k, intensity=0.5
+    )
+    earth = new_node(
+        "celestial",
+        "Terre",
+        cx,
+        cy,
+        body="earth",
+        size=170 * k,
+        corona=0.0,
+        pitch_deg=90.0,
+        light_az_deg=-90.0,
+        light_el_deg=0.0,
+    )
+    orbit = new_node("orbit_path", "Orbite de la Lune", cx, cy, radius=300 * k)
+    orbit.z_index = -1
+    moon = new_node(
+        "celestial",
+        "Lune",
+        cx + 300 * k,
+        cy,
+        body="moon",
+        size=60 * k,
+        corona=0.0,
+        pitch_deg=90.0,
+        light_az_deg=-90.0,
+        light_el_deg=0.0,
+    )
+    seen = new_node(
+        "celestial",
+        "Lune vue de la Terre",
+        c.width * 0.82,
+        cy,
+        body="moon",
+        size=260 * k,
+        corona=0.0,
+        light_el_deg=0.0,
+        ambient=0.02,
+    )
+    label = new_node(
+        "text",
+        "Légende du médaillon",
+        c.width * 0.82,
+        cy + 190 * k,
+        text="Vue depuis la Terre",
+        font_size=34 * k,
+    )
+    title = new_node(
+        "text", "Titre", c.width / 2, 90 * k, text="Les phases de la Lune", font_size=60 * k, bold=True
+    )
+    sun_note = new_node(
+        "text", "Direction du Soleil", 150 * k, cy - 60 * k, text="← lumière du Soleil", font_size=30 * k
+    )
+    legend = scale_warning_node(c)
+    scene.nodes += [sun_light, orbit, earth, moon, seen, label, title, sun_note, legend]
+    scene.tracks += apply_preset(
+        "orbit",
+        moon,
+        {
+            "center_x": cx,
+            "center_y": cy,
+            "radius": 300 * k,
+            "duration_frames": d,
+            "turns": 1,
+            "start_angle_deg": 180.0,
+            "samples_per_turn": 72,
+        },
+    )
+    # vue depuis la Terre : direction de la lumière = angle de l'orbite (0 : pleine lune, 180 : nouvelle)
+    scene.tracks.append(_orbit_angle_track(seen.id, "params.light_az_deg", 0, d, 180.0, 1.0))
+    scene.tracks += apply_preset("spin_body", earth, {"duration_frames": d, "turns": 2.0})
+    scene.tracks += apply_preset("write", title, {"duration_frames": max(1, d // 10)})
+    add_sources(
+        project,
+        [{"label": "NASA Science — Moon phases", "url": "https://science.nasa.gov/moon/moon-phases/"}],
+    )
+    project.scientific_metadata.update({"representation": "schematic", "to_scale": False})
+
+
+def build_doppler(project: Project, scene: Scene) -> None:
+    """Effet Doppler : une source en mouvement resserre ses fronts d'onde devant elle."""
+    c = project.canvas
+    k = _scale(c)
+    scene.background = "#0B1020"
+    d = scene.duration_frames
+    seconds = d / float(c.fps)
+    speed_c, speed_v = 220 * k, 110 * k  # v = c/2
+    waves = new_node(
+        "waves",
+        "Fronts d'onde",
+        c.width * 0.28,
+        c.height * 0.55,
+        mode="fronts",
+        wave_speed=speed_c,
+        frequency=1.6,
+        source_speed=speed_v,
+        max_radius=1500 * k,
+        source_size=16 * k,
+        style_stroke_width=3 * k,
+    )
+    title = new_node(
+        "text", "Titre", c.width / 2, 80 * k, text="L'effet Doppler", font_size=60 * k, bold=True
+    )
+    ahead = new_node(
+        "callout",
+        "Devant",
+        c.width * 0.84,
+        c.height * 0.26,
+        font_size=30 * k,
+        text="Devant : fronts serrés\nfréquence perçue ×2 (aigu)",
+    )
+    behind = new_node(
+        "callout",
+        "Derrière",
+        c.width * 0.19,
+        c.height * 0.26,
+        font_size=30 * k,
+        text="Derrière : fronts espacés\nfréquence perçue ×2/3 (grave)",
+    )
+    note = new_node(
+        "formula", "Formule", c.width / 2, c.height * 0.88, text="f' = f \\frac{c}{c - v}", font_size=56 * k
+    )
+    scene.nodes += [waves, title, ahead, behind, note]
+    scene.tracks += apply_preset("time_flow", waves, {"duration_frames": d, "seconds": seconds})
+    for i, n in enumerate((title, ahead, behind, note)):
+        scene.tracks += apply_preset("appear", n, {"start_frame": i * max(1, d // 8), "duration_frames": 20})
+    add_sources(
+        project,
+        [
+            {
+                "label": "Effet Doppler — source mobile, milieu au repos : f' = f·c/(c − v)",
+                "url": "https://fr.wikipedia.org/wiki/Effet_Doppler",
+            }
+        ],
+    )
+
+
+def build_tides(project: Project, scene: Scene) -> None:
+    """Marées : la Lune tourne autour de la Terre (vue du pôle Nord) et entraîne deux bourrelets
+    d'eau exagérés, l'un face à elle, l'autre à l'opposé."""
+    c = project.canvas
+    k = _scale(c)
+    scene.background = "#03050C"
+    scene.backdrop = "starfield"
+    cx, cy = c.width / 2, c.height * 0.52
+    d = scene.duration_frames
+    earth = new_node(
+        "celestial",
+        "Terre",
+        cx,
+        cy,
+        body="earth",
+        size=260 * k,
+        corona=0.0,
+        pitch_deg=90.0,
+        lit=False,
+        tide_amount=0.28,
+        atmosphere=0.6,
+    )
+    orbit = new_node("orbit_path", "Orbite de la Lune", cx, cy, radius=380 * k)
+    orbit.z_index = -1
+    moon = new_node("celestial", "Lune", cx + 380 * k, cy, body="moon", size=70 * k, corona=0.0, lit=False)
+    title = new_node("text", "Titre", cx, 80 * k, text="Les marées", font_size=60 * k, bold=True)
+    legend = scale_warning_node(c, "Bourrelets de marée très exagérés (en réalité : environ 1 m)")
+    scene.nodes += [orbit, earth, moon, title, legend]
+    scene.tracks += apply_preset(
+        "orbit",
+        moon,
+        {
+            "center_x": cx,
+            "center_y": cy,
+            "radius": 380 * k,
+            "duration_frames": d,
+            "turns": 1,
+            "samples_per_turn": 72,
+        },
+    )
+    scene.tracks += apply_preset("tide_follow", earth, {"duration_frames": d, "turns": 1.0})
+    scene.tracks += apply_preset("spin_body", earth, {"duration_frames": d, "turns": 3.0})
+    scene.tracks += apply_preset("write", title, {"duration_frames": max(1, d // 10)})
+    add_sources(
+        project,
+        [
+            {
+                "label": "NOAA — Tides and Water Levels",
+                "url": "https://oceanservice.noaa.gov/education/tutorial_tides/",
+            }
+        ],
+    )
+    project.scientific_metadata.update({"representation": "schematic", "to_scale": False})
+
+
+def build_supernova(project: Project, scene: Scene) -> None:
+    """Vie et mort d'une étoile massive : géante rouge, effondrement, supernova, trou noir."""
+    c = project.canvas
+    k = _scale(c)
+    scene.background = "#020308"
+    scene.backdrop = "starfield"
+    cx, cy = c.width / 2, c.height / 2
+    d = scene.duration_frames
+    s1, s2, s3 = int(d * 0.35), int(d * 0.45), int(d * 0.62)  # géante rouge, effondrement, explosion
+    star = new_node(
+        "celestial", "Étoile", cx, cy, body="star", size=160 * k, temperature_k=9000.0, lit=False, corona=0.7
+    )
+    size, temp = Track(star.id, "params.size"), Track(star.id, "params.temperature_k")
+    for f, s, tk in ((0, 160, 9000), (s1, 460, 3500), (s2, 470, 3400), (s2 + 8, 14, 30000)):
+        size.set_keyframe(f, s * k, "ease_in_out" if f < s2 else "ease_in")
+        temp.set_keyframe(f, float(tk), "ease_in_out")
+    scene.tracks += [size, temp]
+    scene.tracks += apply_preset("disappear", star, {"start_frame": s3 - 4, "duration_frames": 6})
+    flash = new_node(
+        "light", "Éclair", cx, cy, mode="halo", radius=2200 * k, intensity=0.0, style_fill="#E4F0FF"
+    )
+    fl = Track(flash.id, "params.intensity")
+    for f, v in ((s3 - 6, 0.0), (s3, 3.5), (s3 + 30, 0.6), (s3 + 90, 0.0)):
+        fl.set_keyframe(f, v, "ease_out")
+    scene.tracks.append(fl)
+    shell = new_node(
+        "particles",
+        "Supernova",
+        cx,
+        cy,
+        mode="shell",
+        count=1800,
+        speed=320 * k,
+        size=2.6 * k,
+        lifetime=9.0,
+        style_color_a="#E4F0FF",
+        style_color_b="#4F7BFF",
+    )
+    shell.opacity = 0.0
+    scene.tracks += apply_preset("appear", shell, {"start_frame": s3, "duration_frames": 3})
+    scene.tracks += apply_preset(
+        "time_flow", shell, {"start_frame": s3, "duration_frames": d - s3, "seconds": (d - s3) / float(c.fps)}
+    )
+    nebula = new_node(
+        "particles",
+        "Nébuleuse",
+        cx,
+        cy,
+        mode="nebula",
+        count=2500,
+        radius=330 * k,
+        size=5 * k,
+        time_s=5.0,
+        style_color_a="#5FD3FF",
+        style_color_b="#FF5A8A",
+    )
+    nebula.opacity = 0.0
+    scene.tracks += apply_preset("appear", nebula, {"start_frame": s3 + 40, "duration_frames": 60})
+    hole = new_node("black_hole", "Trou noir", cx, cy, size=70 * k, inclination_deg=75.0)
+    hole.opacity = 0.0
+    scene.tracks += apply_preset("appear", hole, {"start_frame": s3 + 60, "duration_frames": 40})
+    scene.tracks += apply_preset(
+        "time_flow", hole, {"start_frame": s3, "duration_frames": d - s3, "seconds": 6.0}
+    )
+    scene.nodes += [nebula, star, shell, flash, hole]
+    for i, (f, text) in enumerate(
+        (
+            (0, "Une étoile massive brûle son hydrogène"),
+            (s1 - 30, "Elle gonfle : supergéante rouge"),
+            (s2, "Le cœur s'effondre en moins d'une seconde"),
+            (s3 + 10, "Supernova !"),
+            (s3 + 100, "Il reste un trou noir"),
+        )
+    ):
+        cap = new_node(
+            "text",
+            f"Étape {i + 1}",
+            cx,
+            c.height * 0.12,
+            text=text,
+            font_size=46 * k,
+            write_style="typewriter",
+        )
+        cap.opacity = 0.0
+        scene.nodes.append(cap)
+        end = [s1 - 30, s2, s3 + 10, s3 + 100, d][i]
+        op = Track(cap.id, "opacity")
+        for fr, v in (
+            (f, 0.0),
+            (f + 8, 1.0),
+            (max(f + 9, end - 8), 1.0),
+            (max(f + 10, end), 0.0 if i < 4 else 1.0),
+        ):
+            op.set_keyframe(fr, v, "linear")
+        scene.tracks.append(op)
+    add_sources(
+        project,
+        [
+            {
+                "label": "NASA Goddard, Imagine the Universe! — Supernovae",
+                "url": "https://imagine.gsfc.nasa.gov/science/objects/supernovae1.html",
+            }
+        ],
+    )
+    project.scientific_metadata.update(
+        {
+            "representation": "schematic",
+            "to_scale": False,
+            "notes": "Durées très compressées : des millions d'années en quelques secondes.",
+        }
+    )
+
+
+def build_double_slit(project: Project, scene: Scene) -> None:
+    """Photons envoyés un par un vers deux fentes : les impacts, d'abord dispersés, dessinent peu à peu
+    des franges d'interférence (dualité onde-corpuscule)."""
+    c = project.canvas
+    k = _scale(c)
+    scene.background = "#05070F"
+    cy = c.height * 0.52
+    d = scene.duration_frames
+    laser = new_node(
+        "optic",
+        "Source de photons",
+        220 * k,
+        cy,
+        element="laser",
+        size=170 * k,
+        active=1.0,
+        style_beam_color="#7CFFB2",
+    )
+    slits = new_node("optic", "Deux fentes", c.width * 0.5, cy, element="double_slit", size=420 * k)
+    ray = new_node(
+        "ray",
+        "Photons",
+        0,
+        0,
+        points=[[320 * k, cy], [c.width * 0.5, cy]],
+        mode="photons",
+        wavelength_nm=532.0,
+        photon_count=4,
+        photon_size=7 * k,
+    )
+    ray.position = [0.0, 0.0]
+    screen = new_node(
+        "impacts",
+        "Écran",
+        c.width * 0.8,
+        cy,
+        width=150 * k,
+        height=640 * k,
+        count=0.0,
+        max_count=8000,
+        fringes=5.0,
+        show_curve=False,
+        dot_size=2.0 * k,
+    )
+    title = new_node(
+        "text", "Titre", c.width / 2, 80 * k, text="Un photon à la fois…", font_size=56 * k, bold=True
+    )
+    scene.nodes += [laser, ray, slits, screen, title]
+    scene.tracks += apply_preset("photon_travel", ray, {"duration_frames": d, "passes": 12.0})
+    scene.tracks += apply_preset("impacts_build", screen, {"duration_frames": d, "total": 8000})
+    scene.tracks += apply_preset("write", title, {"duration_frames": max(1, d // 10)})
+    add_sources(
+        project,
+        [
+            {
+                "label": "P. Grangier, G. Roger, A. Aspect, Europhys. Lett. 1, 173 (1986)",
+                "url": "https://doi.org/10.1209/0295-5075/1/4/004",
+            },
+            {
+                "label": "A. Tonomura et al., Am. J. Phys. 57, 117 (1989)",
+                "url": "https://doi.org/10.1119/1.16104",
+            },
+        ],
+    )
+
+
+def build_solar_system(project: Project, scene: Scene) -> None:
+    """Les huit planètes avec leurs textures réelles, qui tournent sur elles-mêmes (tailles non à
+    l'échelle entre géantes et telluriques)."""
+    from antares_studio.resources.astro import BODIES
+
+    c = project.canvas
+    k = _scale(c)
+    scene.background = "#03050C"
+    scene.backdrop = "starfield"
+    d = scene.duration_frames
+    planets = ["mercury", "venus", "earth", "mars", "jupiter", "saturn", "uranus", "neptune"]
+    for i, pid in enumerate(planets):
+        b = BODIES[pid]
+        x = c.width * (i + 0.5) / len(planets)
+        size = (95 if pid in ("jupiter", "saturn") else 75 if pid in ("uranus", "neptune") else 55) * k * 1.6
+        node = new_node(
+            "celestial",
+            b.label,
+            x,
+            c.height * 0.5,
+            body=pid,
+            size=size,
+            tilt_deg=b.obliquity_deg,
+            corona=0.0,
+            light_az_deg=-60.0,
+        )
+        if pid == "saturn":
+            node.params["pitch_deg"] = 18.0
+        label = new_node(
+            "text", f"Nom {b.label}", x, c.height * 0.5 + 150 * k, text=b.label, font_size=30 * k
+        )
+        scene.nodes += [node, label]
+        scene.tracks += apply_preset("appear", node, {"start_frame": i * 6, "duration_frames": 20})
+        turns = max(0.25, min(3.0, 24.0 / abs(b.rotation_h) * 2)) * (1 if b.rotation_h > 0 else -1)
+        scene.tracks += apply_preset("spin_body", node, {"duration_frames": d, "turns": turns})
+    legend = scale_warning_node(c, "Tailles et distances non à l'échelle ; rotations accélérées")
+    scene.nodes.append(legend)
+    add_sources(
+        project,
+        [
+            {
+                "label": "NASA NSSDCA — Planetary Fact Sheet",
+                "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/",
+            }
+        ],
+    )
+    project.scientific_metadata.update({"representation": "schematic", "to_scale": False})
+
+
+def build_world_map(project: Project, scene: Scene) -> None:
+    """Planisphère (Natural Earth) qui se dessine d'ouest en est, continents nommés."""
+    c = project.canvas
+    k = _scale(c)
+    scene.background = "#081726"
+    m = new_node("world_map", "Planisphère", c.width / 2, c.height / 2 + 20 * k, width=1700 * k, labels=True)
+    scene.nodes.append(m)
+    scene.tracks += apply_preset("trace", m, {"duration_frames": max(2, scene.duration_frames // 3)})
+
+
+def build_night_sky(project: Project, scene: Scene) -> None:
+    """Ciel réel autour d'Orion (Hipparcos) qui défile lentement ; Orion mise en valeur."""
+    c = project.canvas
+    k = _scale(c)
+    scene.background = "#02030A"
+    sky = new_node(
+        "sky",
+        "Ciel d'hiver",
+        c.width / 2,
+        c.height / 2,
+        width=float(c.width),
+        height=float(c.height),
+        center_ra_deg=70.0,
+        center_dec_deg=5.0,
+        fov_deg=70.0,
+        highlight="Ori",
+        label_size=24 * k,
+        twinkle=0.3,
+    )
+    scene.nodes.append(sky)
+    ra = Track(sky.id, "params.center_ra_deg")
+    ra.set_keyframe(0, 70.0, "ease_in_out")
+    ra.set_keyframe(scene.duration_frames, 95.0, "ease_in_out")
+    scene.tracks.append(ra)
+    scene.tracks += apply_preset(
+        "time_flow", sky, {"duration_frames": scene.duration_frames, "seconds": 20.0}
+    )
+
+
 TEMPLATES: dict[str, tuple[str, TemplateBuilder]] = {
     "intro": ("Introduction (titre et sous-titre)", build_intro),
     "moon_phases": ("Phases de la Lune (Soleil, Terre, Lune en orbite)", build_moon_phases),
@@ -677,6 +1158,14 @@ TEMPLATES: dict[str, tuple[str, TemplateBuilder]] = {
     "linear_map": ("Transformation linéaire (grille, vecteurs î et ĵ)", build_linear_map),
     "curved_spacetime": ("Espace-temps courbé par une masse", build_curved_spacetime),
     "solids": ("Solides 3D en rotation", build_solids),
+    "lunar_phases_real": ("Phases de la Lune (astres réels, vue depuis la Terre)", build_lunar_phases_real),
+    "doppler": ("Effet Doppler (source en mouvement)", build_doppler),
+    "tides": ("Marées (Lune en orbite, bourrelets exagérés)", build_tides),
+    "supernova": ("Vie et mort d'une étoile (supernova, trou noir)", build_supernova),
+    "double_slit": ("Photons et fentes de Young (onde-corpuscule)", build_double_slit),
+    "solar_system": ("Les planètes du Système solaire", build_solar_system),
+    "world_map": ("Planisphère (continents)", build_world_map),
+    "night_sky": ("Ciel étoilé réel (Orion)", build_night_sky),
     "credits": ("Crédits (sources, ressources, logiciel)", build_credits),
 }
 

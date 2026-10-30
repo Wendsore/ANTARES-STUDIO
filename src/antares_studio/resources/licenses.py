@@ -99,6 +99,25 @@ def provenance_warnings(project: Project, scene_id: str | None = None) -> list[s
     return out
 
 
+def bundled_datasets_used(project: Project) -> list[str]:
+    """Jeux de données intégrés (``resources.astro.DATASETS``) que le projet affiche, dans l'ordre du
+    catalogue : textures des astres, cartes Natural Earth, ciel d'Hipparcos."""
+    from antares_studio.resources.astro import DATASETS
+
+    used: set[str] = set()
+    for scene in project.scenes:
+        for node in scene.nodes:
+            if node.kind == "celestial" and node.params.get("body", "earth") != "custom":
+                used.add("solarsystemscope")
+            elif node.kind == "world_map":
+                used.add("naturalearth")
+                if node.params.get("map_style") in ("satellite", "night"):
+                    used.add("solarsystemscope")
+            elif node.kind == "sky":
+                used.add("d3celestial")
+    return [d for d in DATASETS if d in used]
+
+
 def credits_lines(project: Project, include_software: bool = True) -> list[str]:
     """Lignes de crédits : sources scientifiques, ressources tierces (attribution), logiciel."""
     lines: list[str] = []
@@ -129,6 +148,12 @@ def credits_lines(project: Project, include_software: bool = True) -> list[str]:
             if lic.source_url:
                 parts.append(lic.source_url)
             lines.append("  • " + " — ".join(parts))
+    bundled = bundled_datasets_used(project)
+    if bundled:
+        from antares_studio.resources.astro import DATASETS
+
+        lines.append("Ressources intégrées :")
+        lines.extend(f"  • {DATASETS[d].credit} — {DATASETS[d].url}" for d in bundled)
     if include_software:
         lines.extend(SOFTWARE_CREDITS)
     return lines

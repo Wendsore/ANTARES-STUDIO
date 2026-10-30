@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 from antares_studio.app import theme, thumbnails
 from antares_studio.audio import sfx
 from antares_studio.domain.effects import EFFECT_PRESETS, OBJECT_LOOKS, SCENE_LOOKS
-from antares_studio.domain.kinds import SOLID_SHAPES, resolve_variant
+from antares_studio.domain.kinds import OBJECT_VARIANTS, SOLID_SHAPES, resolve_variant
 from antares_studio.domain.text_styles import TEXT_STYLES
 from antares_studio.resources.licenses import STATUS_COMPLETE, InventoryRow, choice_for
 from antares_studio.resources.templates import TEMPLATES
@@ -45,6 +45,15 @@ CATEGORIES: dict[str, tuple[str, ...]] = {
     "Maths": ("formula",),
     "Grilles et espace": ("grid:plane", "grid:transform", "grid:spacetime", "grid:wave"),
     "Solides 3D": tuple(f"solid3d:{shape}" for shape, _label in SOLID_SHAPES),
+    "Astres": tuple(v for v in OBJECT_VARIANTS if v.startswith("celestial:") and ":star_" not in v)
+    + ("celestial",),
+    "Étoiles connues": tuple(v for v in OBJECT_VARIANTS if v.startswith("celestial:star_")),
+    "Cartes et ciel": tuple(v for v in OBJECT_VARIANTS if v.startswith(("world_map:", "sky:"))),
+    "Ondes": tuple(v for v in OBJECT_VARIANTS if v.startswith("waves:")),
+    "Lumière et optique": tuple(
+        v for v in OBJECT_VARIANTS if v.startswith(("ray:", "light:", "optic:", "impacts:"))
+    ),
+    "Phénomènes cosmiques": tuple(v for v in OBJECT_VARIANTS if v.startswith(("particles:", "black_hole:"))),
     "3D": ("model3d", "image_sequence"),
     "Images": ("image",),
     "Organisation": ("group", "camera"),

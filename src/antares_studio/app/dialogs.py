@@ -115,7 +115,12 @@ class AboutDialog(QDialog):
             "- Polices d'écriture livrées (Kalam, Caveat, Cabin Sketch, EB Garamond…) : Google Fonts,\n"
             "  licence SIL OFL 1.1 (Apache 2.0 pour Permanent Marker et Special Elite). Textes complets :\n"
             "  resources/fonts/<famille>/.\n"
-            "- Données d'exemple des planètes : NASA Planetary Fact Sheet (domaine public).\n\n"
+            "- Données d'exemple des planètes : NASA Planetary Fact Sheet (domaine public).\n"
+            "- Textures des astres : Solar System Scope (INOVE), d'après les données NASA, licence\n"
+            "  CC BY 4.0 (https://www.solarsystemscope.com/textures/).\n"
+            "- Cartes du monde : Natural Earth (domaine public). Étoiles et constellations : d3-celestial\n"
+            "  (Olaf Frohn, licence BSD 3 clauses, resources/sky/LICENSE-d3-celestial.txt), catalogue\n"
+            "  Hipparcos (ESA). Étoiles connues : Wikidata (CC0). Détail : resources/astro/README.md.\n\n"
             "Licence d'ANTARES Studio : non encore décidée (voir README)."
         )
         layout = QVBoxLayout(self)

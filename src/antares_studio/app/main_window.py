@@ -59,7 +59,7 @@ from antares_studio.domain.commands import (
     SetSceneProperty,
 )
 from antares_studio.domain.ids import new_id
-from antares_studio.domain.kinds import resolve_variant, spec_for
+from antares_studio.domain.kinds import resolve_variant, spec_for, split_style
 from antares_studio.domain.layout import ALIGN_MODES, align_deltas, distribute_deltas
 from antares_studio.domain.model import AssetLicense, AudioClip, Canvas, Marker, Node, Scene
 from antares_studio.domain.validation import ProjectValidationError
@@ -1115,11 +1115,12 @@ class MainWindow(QMainWindow):
         x = round(max(0.0, min(float(c.width), center.x())), 2)
         y = round(max(0.0, min(float(c.height), center.y())), 2)
         count = sum(1 for n in scene.nodes if n.kind == kind) + 1
+        variant_params, variant_style = split_style(variant_params)
         node = Node.create(
             kind,
-            f"{variant_label if variant_params else spec.label} {count}",
+            f"{variant_label if variant_params or variant_style else spec.label} {count}",
             position=[x, y],
-            style=spec.default_style(),
+            style={**spec.default_style(), **variant_style},
             params={**spec.default_params(), **variant_params},
         )
         if kind == "text":

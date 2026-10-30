@@ -113,8 +113,8 @@ PRESETS: dict[str, PresetSpec] = {
         PresetSpec(
             "trace",
             "Tracer la courbe",
-            "Dessine progressivement la courbe d'un graphique ou les lignes d'une grille "
-            "(progression 0 → 1).",
+            "Dessine progressivement la courbe d'un graphique, les lignes d'une grille, le chemin d'un "
+            "rayon lumineux ou une carte du monde (progression 0 → 1).",
             _COMMON + (_EASING,),
         ),
         PresetSpec(
@@ -191,6 +191,81 @@ PRESETS: dict[str, PresetSpec] = {
             "Les rides de la déformation « Onde » s'éloignent du centre (ondes gravitationnelles, ronds "
             "dans l'eau).",
             _COMMON + (PresetParam("cycles", "Nombre de rides émises", "float", 3.0, min=0.1),),
+        ),
+        PresetSpec(
+            "time_flow",
+            "Faire avancer le temps",
+            "Le temps propre de l'objet (ondes, particules, supernova, trou noir, ciel) avance "
+            "régulièrement : les fronts d'onde partent, l'explosion se déploie, le disque tourne.",
+            _COMMON
+            + (PresetParam("seconds", "Secondes simulées pendant la durée", "float", 4.0, min=0.001),),
+        ),
+        PresetSpec(
+            "spin_body",
+            "Rotation d'un astre",
+            "La planète, la Lune ou l'étoile tourne sur elle-même (rotation directe : les reliefs vont de "
+            "gauche à droite).",
+            _COMMON
+            + (
+                PresetParam("turns", "Nombre de tours", "float", 1.0),
+                PresetParam(
+                    "easing",
+                    "Interpolation",
+                    "choice",
+                    "linear",
+                    choices=("linear", "ease_in", "ease_out", "ease_in_out"),
+                ),
+            ),
+        ),
+        PresetSpec(
+            "moon_phases",
+            "Phases (lumière qui tourne)",
+            "La lumière fait le tour de l'astre : nouvelle lune → premier quartier → pleine lune → dernier "
+            "quartier → nouvelle lune (un cycle par lunaison).",
+            _COMMON
+            + (
+                PresetParam("cycles", "Nombre de lunaisons", "float", 1.0, min=0.01),
+                PresetParam(
+                    "start",
+                    "Phase de départ",
+                    "choice",
+                    "nouvelle lune",
+                    choices=("nouvelle lune", "pleine lune"),
+                ),
+            ),
+        ),
+        PresetSpec(
+            "tide_follow",
+            "Marées qui suivent un astre",
+            "Les bourrelets de marée tournent avec l'astre attracteur. Donnez les mêmes réglages que "
+            "l'orbite de la Lune (centre, tours, sens, angle de départ) pour qu'ils restent "
+            "alignés sur elle.",
+            _COMMON
+            + (
+                PresetParam("turns", "Nombre de tours", "float", 1.0),
+                PresetParam("clockwise", "Sens horaire (à l'écran)", "bool", False),
+                PresetParam("start_angle_deg", "Angle de départ (°)", "float", 0.0),
+                PresetParam("lag_deg", "Avance des bourrelets (°)", "float", 0.0, min=-90, max=90),
+            ),
+        ),
+        PresetSpec(
+            "photon_travel",
+            "Photons qui voyagent",
+            "Les photons ou paquets d'onde d'un rayon parcourent le chemin du début à la fin.",
+            _COMMON + (PresetParam("passes", "Nombre de passages", "float", 1.0, min=0.01),),
+        ),
+        PresetSpec(
+            "impacts_build",
+            "Impacts qui s'accumulent",
+            "Les impacts de photons apparaissent un à un, de plus en plus vite : la figure d'interférence "
+            "se dessine à partir de points isolés (dualité onde-corpuscule).",
+            _COMMON + (PresetParam("total", "Nombre d'impacts à la fin", "int", 6000, min=1, max=50000),),
+        ),
+        PresetSpec(
+            "detector_click",
+            "Déclic du détecteur",
+            "Le détecteur (ou le laser) s'allume brièvement : un photon vient d'être détecté.",
+            _COMMON[:1] + (PresetParam("duration_frames", "Durée (images)", "int", 8, min=2),),
         ),
         PresetSpec(
             "shake",
@@ -380,6 +455,57 @@ def apply_preset(preset_id: str, node: Node, params: dict[str, Any] | None = Non
         t = Track(node.id, "params.warp_phase")
         t.set_keyframe(start, phase0, "linear")
         t.set_keyframe(end, phase0 + float(p["cycles"]), "linear")
+        tracks.append(t)
+    elif preset_id == "time_flow":
+        t0 = float(node.params.get("time_s", 0.0))
+        t = Track(node.id, "params.time_s")
+        t.set_keyframe(start, t0, "linear")
+        t.set_keyframe(end, t0 + float(p["seconds"]), "linear")
+        tracks.append(t)
+    elif preset_id == "spin_body":
+        s0 = float(node.params.get("spin_deg", 0.0))
+        t = Track(node.id, "params.spin_deg")
+        t.set_keyframe(start, s0, easing)
+        t.set_keyframe(end, s0 + 360.0 * float(p["turns"]), easing)
+        tracks.append(t)
+    elif preset_id == "moon_phases":
+        a0 = 180.0 if p["start"] == "nouvelle lune" else 0.0
+        t = Track(node.id, "params.light_az_deg")
+        t.set_keyframe(start, a0, "linear")
+        t.set_keyframe(end, a0 + 360.0 * float(p["cycles"]), "linear")
+        tracks.append(t)
+    elif preset_id == "tide_follow":
+        # même paramétrage angulaire que le preset « orbit » : position (cx + r·cos a, cy + r·sin a), y vers
+        # le bas ; l'angle de marée est compté dans le sens trigonométrique à l'écran, d'où le signe −
+        sign = 1.0 if bool(p["clockwise"]) else -1.0
+        a0, turns = float(p["start_angle_deg"]), float(p["turns"])
+        n = max(2, min(dur, int(round(36 * abs(turns)))))
+        t = Track(node.id, "params.tide_angle_deg")
+        for i in range(n + 1):
+            u = i / n
+            a = a0 + sign * 360.0 * turns * u
+            t.set_keyframe(start + int(round(u * dur)), -a + float(p["lag_deg"]), "linear")
+        tracks.append(t)
+    elif preset_id == "photon_travel":
+        t = Track(node.id, "params.photon_pos")
+        t.set_keyframe(start, 0.0, "linear")
+        t.set_keyframe(
+            end,
+            float(p["passes"])
+            + (int(node.params.get("photon_count", 1)) - 1) / max(1, int(node.params.get("photon_count", 1))),
+            "linear",
+        )
+        tracks.append(t)
+    elif preset_id == "impacts_build":
+        t = Track(node.id, "params.count")
+        t.set_keyframe(start, 0.0, "ease_in")
+        t.set_keyframe(end, float(p["total"]), "ease_in")
+        tracks.append(t)
+    elif preset_id == "detector_click":
+        t = Track(node.id, "params.active")
+        t.set_keyframe(start, 0.0, "linear")
+        t.set_keyframe(start + max(1, dur // 4), 1.0, "ease_out")
+        t.set_keyframe(end, 0.0, "linear")
         tracks.append(t)
     elif preset_id == "kepler":
         tracks += _kepler_tracks(node, p, start, dur)

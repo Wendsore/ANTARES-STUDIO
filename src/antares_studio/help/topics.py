@@ -78,6 +78,24 @@ TOPICS: tuple[Topic, ...] = (
     ),
     Topic("solides-3d", "Sciences", "Solides 3D", "cube sphère pyramide cylindre cône polyèdre tore 3d"),
     Topic("modeles-3d", "Sciences", "Modèles 3D (glTF)", "gltf glb 3d modèle objet import"),
+    Topic(
+        "astres-et-cartes",
+        "Sciences",
+        "Astres, étoiles, cartes et ciel",
+        "planète lune soleil terre étoile phases marée planisphère carte continent constellation ciel",
+    ),
+    Topic(
+        "ondes-et-optique",
+        "Sciences",
+        "Ondes, lumière et optique",
+        "onde doppler mach interférence young fente photon laser rayon lumière éclairage aspect dualité",
+    ),
+    Topic(
+        "phenomenes-cosmiques",
+        "Sciences",
+        "Phénomènes cosmiques : supernova, nébuleuse, trou noir",
+        "supernova nébuleuse trou noir accrétion explosion particules",
+    ),
     Topic("images", "Ressources", "Images importées", "png svg jpeg photo"),
     Topic("provenance-et-licences", "Ressources", "Provenance et licences", "licence droits auteur"),
     Topic("credits", "Ressources", "Crédits", "générique sources"),
@@ -312,6 +330,51 @@ def _solids() -> str:
     return ", ".join(f"**{label}**" for _shape, label in SOLID_SHAPES) + "."
 
 
+def _bodies() -> str:
+    from antares_studio.resources.astro import BODIES
+
+    lines = ["| Astre | Diamètre | Inclinaison de l'axe | Rotation | Révolution |", "|---|---|---|---|---|"]
+    for b in BODIES.values():
+        rot = f"{b.rotation_h:g} h".replace(".", ",") if b.rotation_h is not None else "—"
+        rev = f"{b.orbital_period_d:g} j".replace(".", ",") if b.orbital_period_d is not None else "—"
+        diam = f"{b.diameter_km:,.0f} km".replace(",", " ")
+        tilt = f"{b.obliquity_deg:g}°".replace(".", ",") if b.obliquity_deg is not None else "—"
+        lines.append(f"| **{b.label}** | {diam} | {tilt} | {rot} | {rev} |")
+    lines.append("")
+    lines.append("Rotation négative : rotation rétrograde. Source : NASA, *Planetary Fact Sheet*.")
+    return "\n".join(lines)
+
+
+def _famous_stars() -> str:
+    from antares_studio.resources.astro import FAMOUS_STARS
+
+    lines = [
+        "| Étoile | Constellation | Température | Rayon (Soleil = 1) | Distance |",
+        "|---|---|---|---|---|",
+    ]
+    for s in FAMOUS_STARS.values():
+        radius = f"{s.radius_sun:g}".replace(".", ",") if s.radius_sun is not None else "—"
+        dist = f"{s.distance_ly:,.1f} al".replace(",", " ").replace(".", ",") if s.distance_ly else "—"
+        if s.id == "sun":
+            dist = "8,3 minutes-lumière"
+        temp = f"{s.temperature_k:,.0f} K".replace(",", " ")
+        lines.append(f"| **{s.label}** | {s.constellation} | {temp} | {radius} | {dist} |")
+    lines.append("")
+    lines.append(
+        "Source : Wikidata (CC0), consultée le 2026-10-30 ; moyenne quand plusieurs mesures divergent."
+    )
+    return "\n".join(lines)
+
+
+def _datasets() -> str:
+    from antares_studio.resources.astro import DATASETS
+
+    lines = ["| Données | Origine | Licence |", "|---|---|---|"]
+    for d in DATASETS.values():
+        lines.append(f"| **{d.label}** | {d.credit.split(' — ')[0]} ({d.url}) | {d.license} |")
+    return "\n".join(lines)
+
+
 GENERATED = {
     "objets": _objects,
     "animations": _animations,
@@ -327,4 +390,7 @@ GENERATED = {
     "polices": _fonts,
     "decors": _backdrops,
     "solides": _solids,
+    "astres": _bodies,
+    "etoiles": _famous_stars,
+    "jeux-de-donnees": _datasets,
 }

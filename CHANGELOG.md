@@ -2,6 +2,21 @@
 
 Toutes les évolutions **effectives** (pas les intentions). Format : date, lot, changements observables.
 
+## [0.1.0.dev0] — 2026-10-30 — Astres réels, cartes, ciel, ondes, optique, supernova et trou noir
+
+- **Astres réels** (Bibliothèque > Astres) : Soleil, Mercure, Vénus, Terre, Lune, Mars, Jupiter, Saturne, Uranus, Neptune, avec les **textures Solar System Scope** (CC BY 4.0) et leur vraie inclinaison d'axe ; lumière directionnelle animable, côté nuit, nuages et lumières des villes pour la Terre, atmosphère, anneaux de Saturne avec l'ombre de la planète ; texture personnelle possible.
+- **Phases de la Lune** (animation *Phases*), **marées exagérées** (bourrelets océaniques ou astre étiré, animation *Marées qui suivent un astre* calée sur l'orbite).
+- **16 étoiles connues** (Sirius, Véga, Rigel, Bételgeuse, Antarès, Aldébaran, Deneb, Polaire…) : température, rayon et distance réels (Wikidata), **couleur calculée par le rayonnement du corps noir**.
+- **Planisphères** (Natural Earth) : continents, pays, contours, Terre vue de l'espace, Terre la nuit ; projections Equal Earth, équirectangulaire, Mercator ; continent mis en valeur, tracé d'ouest en est.
+- **Ciel étoilé réel** : 5 044 étoiles (Hipparcos) et 88 constellations nommées en français ; Orion, Grande Ourse, Cassiopée, Scorpion, Croix du Sud.
+- **Ondes** : fronts d'onde d'une source mobile (**effet Doppler**, **cône de Mach**), champ d'interférences de **Young** (instantané ou franges), corde progressive ou stationnaire ; animation *Faire avancer le temps*.
+- **Lumière et optique** : rayon lumineux en faisceau, onde, paquets d'onde, photons, pointillés ou flèches, à la couleur de sa longueur d'onde ; 12 éléments d'optique (laser, lampe, miroir, lame séparatrice, lentilles, fentes, écran, détecteur, prisme, polariseur) ; **écran de détection** où les impacts de photons construisent les franges (ou non, si le chemin est mesuré) ; objet **Lumière** (halo, projecteur, pénombre, rayons) ; direction de lumière réglable sur les solides 3D.
+- **Phénomènes cosmiques** : explosion, coquille de supernova, nébuleuse, disque d'accrétion, **trou noir** avec anneau de photons et disque déformé (illustration).
+- **8 modèles** : Phases de la Lune, Effet Doppler, Marées, Vie et mort d'une étoile (supernova → trou noir), Photons et fentes de Young (Grangier, Roger et Aspect 1986), Système solaire, Planisphère, Ciel d'Orion ; **7 animations**.
+- Les vidéos qui affichent ces ressources portent automatiquement leur **crédit** dans le générique ; licences et empreintes dans `resources/astro/README.md`, notices tierces et « À propos » à jour.
+- Aide : rubriques « Astres, étoiles, cartes et ciel », « Ondes, lumière et optique », « Phénomènes cosmiques » ; Bibliothèque et limites mises à jour.
+- ADR-0009.
+
 ## [0.1.0.dev0] — 2026-10-22 — Écriture à la craie, grilles déformables, solides 3D
 
 - **Écriture progressive** des textes et des équations (animation **Écrire**, réglage *Écriture 0 → 1*) : tracé puis remplissage (façon 3Blue1Brown), craie lettre par lettre, machine à écrire avec curseur, lettres ou mots en fondu ; **Effacer l'écriture** en sens inverse. Une équation s'écrit dans l'ordre de lecture (barre de fraction, racine).
