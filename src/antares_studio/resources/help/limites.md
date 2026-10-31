@@ -46,6 +46,14 @@ ANTARES Studio est en version de développement. Voici, honnêtement, ce qu'il n
 - Le ciel étoilé ne calcule pas l'heure ni le lieu d'observation (horizon) : choisissez le centre du champ en coordonnées célestes.
 - Pas de carte d'une région à grande échelle (pays seul, ville) : seuls les planisphères sont fournis.
 
+## Personnages
+
+- En style **Réaliste**, les signes de bande dessinée (« ? », « ! », étincelles, vapeur) ne sont pas dessinés : ajoutez une bulle si besoin.
+- Les personnages sont des images fixes en 2D : pas de 3D, pas de marche ni de geste animé image par image ; l'émotion et la pose changent d'un coup à l'image clé.
+- La bouche ne suit pas encore la voix enregistrée (pas de synchronisation labiale automatique) : alternez vous-même **Explique** et **Neutre**.
+- Pas de suivi de vos mouvements par la caméra.
+- On ne peut pas encore importer son propre dessin de personnage découpé en pièces : importez une image fixe avec l'objet **Image**.
+
 ## Exemples
 
 - Les exemples complets n'ont pas de voix : seuls les sous-titres portent le texte. Enregistrez votre narration au micro.

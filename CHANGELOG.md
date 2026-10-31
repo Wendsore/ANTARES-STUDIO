@@ -2,6 +2,16 @@
 
 Toutes les évolutions **effectives** (pas les intentions). Format : date, lot, changements observables.
 
+## [0.1.0.dev0] — 2026-10-30 — Personnages chibis
+
+- **Personnages** (Bibliothèque > Personnages) : chibis 2D dessinés par le logiciel, neuf fiches de jeu (trois ingénieurs, présentateur, présentatrice, scientifique, ironique, sceptique, râleur toujours énervé).
+- **22 émotions** (de la joie au dégoût, ironie, doute, fureur…), **10 poses** (montre, index levé, salue, main au menton, bras croisés…), regard, sens (miroir) : tous **changeables par image clé** pendant la présentation.
+- Apparence : 6 teints, 7 coiffures (afro, tresses, locks, macarons, box braids…), 11 tenues (t-shirt, chemise, blouse, sweat, dashiki, costume, maillot, doudoune, gilet haute visibilité, veste en jean, polo), barbe, lunettes, casquette, kufi, couleurs de tenue et de cheveux.
+- **Adulte stylisé** (réglage *Proportions*) : tête plus petite, yeux en amande, nez large, lèvres pleines ; fiches **L'ingénieur**, **L'ingénieur sur le terrain**, **L'ingénieur décontracté** ; tenues doudoune sans manches, gilet haute visibilité, veste en jean doublée, polo ; casque de chantier, lunettes de protection, monture fine, couleur du couvre-chef.
+- **Réaliste (illustration)** (réglage *Proportions*) : sans contour, volumes ombrés, proportions d'adulte, visage détaillé, mains à doigts, cheveux et barbe texturés ; même catalogue d'émotions, de poses et de tenues ; les trois fiches ingénieur et le modèle Dialogue l'utilisent.
+- Modèle **Dialogue de personnages** : deux personnages se répondent, bulles et émotions changent à chaque réplique.
+- Aide : rubrique « Personnages chibis » ; Bibliothèque et limites mises à jour. ADR-0010.
+
 ## [0.1.0.dev0] — 2026-10-30 — Astres réels, cartes, ciel, ondes, optique, supernova et trou noir
 
 - **Astres réels** (Bibliothèque > Astres) : Soleil, Mercure, Vénus, Terre, Lune, Mars, Jupiter, Saturne, Uranus, Neptune, avec les **textures Solar System Scope** (CC BY 4.0) et leur vraie inclinaison d'axe ; lumière directionnelle animable, côté nuit, nuages et lumières des villes pour la Terre, atmosphère, anneaux de Saturne avec l'ombre de la planète ; texture personnelle possible.

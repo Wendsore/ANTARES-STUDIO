@@ -54,6 +54,7 @@ CATEGORIES: dict[str, tuple[str, ...]] = {
         v for v in OBJECT_VARIANTS if v.startswith(("ray:", "light:", "optic:", "impacts:"))
     ),
     "Phénomènes cosmiques": tuple(v for v in OBJECT_VARIANTS if v.startswith(("particles:", "black_hole:"))),
+    "Personnages": tuple(v for v in OBJECT_VARIANTS if v.startswith("character:")),
     "3D": ("model3d", "image_sequence"),
     "Images": ("image",),
     "Organisation": ("group", "camera"),

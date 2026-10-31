@@ -31,6 +31,7 @@ RENDERED_KINDS = (
     "black_hole",
     "optic",
     "world_map",
+    "character",
 )
 KIND_ICONS: dict[str, str] = {
     "text": "type",
