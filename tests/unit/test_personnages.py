@@ -178,6 +178,7 @@ def test_dialogue_template_changes_emotions_and_cites_its_source(qapp) -> None: 
     scene = project.scenes[0]
     chars = [n for n in scene.nodes if n.kind == "character"]
     assert len(chars) == 2 and any(n.params["mirror"] for n in chars)
+    assert {n.params["proportions"] for n in chars} == {"realiste"}  # un seul style dans la scène
     sceptic = next(n for n in chars if n.params["mirror"])
     d = scene.duration_frames
     seen = [
@@ -228,7 +229,40 @@ def test_hat_colour_and_engineer_sheets() -> None:
     terrain = characters.PERSONALITY_BY_ID["ingenieur_terrain"]
     assert terrain.params["outfit"] == "gilet_hv" and terrain.params["hat"] == "casque"
     assert all(
-        p.params.get("proportions") == "adulte"
+        p.params.get("proportions") == "realiste"
         for p in characters.PERSONALITIES
         if p.id.startswith("ingenieur")
     )
+
+
+def test_realistic_style_covers_the_whole_catalogue(qapp) -> None:  # type: ignore[no-untyped-def]
+    for name in ("emotion", "pose", "outfit", "hair", "beard", "glasses", "hat", "gaze", "skin"):
+        svgs = {chibi.chibi_svg({"proportions": "realiste", name: v}, {}) for v, _l in CHOICE_LISTS[name]}
+        assert len(svgs) == len(CHOICE_LISTS[name]), name
+        assert all(_valid(s) for s in svgs), name
+
+
+def test_realistic_style_has_no_outline_and_no_comic_signs() -> None:
+    for emotion, _label in characters.EMOTION_CHOICES:
+        svg = chibi.chibi_svg({"proportions": "realiste", "emotion": emotion}, {})
+        assert "<text" not in svg, emotion  # ni « ? », ni « ! », ni symbole de colère
+        assert chibi.OUT not in svg, emotion  # pas de trait de contour de bande dessinée
+
+
+def test_realistic_figure_has_adult_proportions(qapp) -> None:  # type: ignore[no-untyped-def]
+    img = _render({"proportions": "realiste", "glasses": "aucune", "hat": "aucun"}, w=400, h=560)
+    opaque = img[..., 3] > 0
+    rows = np.flatnonzero(opaque.any(axis=1))
+    top, bottom = int(rows[0]), int(rows[-1])
+    # menton : première ligne, sous le visage, où la silhouette se rétrécit au cou
+    widths = opaque.sum(axis=1)
+    chin = next(y for y in range(top + 40, top + 140) if widths[y] < 0.5 * widths[top + 40 : top + 80].max())
+    heads = (bottom - top) / (chin - top)
+    assert 6.0 < heads < 8.5, heads  # un adulte mesure environ sept têtes et demie
+
+
+def test_realistic_mirror_is_a_horizontal_flip(qapp) -> None:  # type: ignore[no-untyped-def]
+    params = {"proportions": "realiste", "pose": "montre"}
+    a = _render(params, w=200, h=280).astype(int)
+    b = _render({**params, "mirror": True}, w=200, h=280).astype(int)
+    assert np.mean(np.abs(a[:, ::-1] - b)[..., 3] > 40) < 0.01

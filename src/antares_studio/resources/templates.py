@@ -1178,8 +1178,10 @@ def build_dialogue(project: Project, scene: Scene) -> None:
     def character(pid: str, name: str, x: float, mirror: bool) -> Node:
         p = PERSONALITY_BY_ID[pid]
         styles = {f"style_{key}": v for key, v in p.style.items()}
+        # les deux interlocuteurs dans le même style que le personnage du porteur
+        params = {**p.params, "proportions": PERSONALITY_BY_ID["ingenieur"].params["proportions"]}
         return new_node(
-            "character", name, x, c.height * 0.6, **p.params, **styles, mirror=mirror, height=560 * k
+            "character", name, x, c.height * 0.6, **params, **styles, mirror=mirror, height=560 * k
         )
 
     prof = character("ingenieur", "L'ingénieur", c.width * 0.2, False)

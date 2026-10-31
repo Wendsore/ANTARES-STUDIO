@@ -20,14 +20,15 @@ Faites de même pour la **Pose** (montrer le tableau, lever l'index, croiser les
 
 Le modèle **Dialogue de personnages (émotions et bulles)** montre deux personnages qui se répondent : bulles qui apparaissent et disparaissent, émotions et poses qui changent à chaque réplique. Partez de lui pour vos propres dialogues.
 
-## Chibi ou adulte stylisé
+## Chibi, adulte stylisé ou réaliste
 
 Le réglage **Proportions** change tout le dessin :
 
-- **Chibi** : grosse tête, grands yeux ronds, style enfantin et expressif ;
-- **Adulte stylisé** : tête plus petite, épaules larges, yeux en amande, nez large, lèvres pleines ; plus sobre, pour un présentateur professionnel. Les fiches **L'ingénieur**, **L'ingénieur sur le terrain** (gilet haute visibilité, casque, lunettes de protection) et **L'ingénieur décontracté** (veste en jean sur sweat) l'utilisent.
+- **Chibi** : grosse tête, grands yeux ronds, contours épais, style enfantin et expressif ;
+- **Adulte stylisé** : tête plus petite, épaules larges, toujours dessiné au trait ;
+- **Réaliste (illustration)** : proportions d'adulte, sans contour, volumes ombrés, visage détaillé (paupières, nez large, lèvres pleines, barbe et cheveux texturés). Pas de « ? » ni de « ! » : l'émotion passe par le visage et la pose. Les fiches **L'ingénieur**, **L'ingénieur sur le terrain** (gilet haute visibilité, casque, lunettes de protection) et **L'ingénieur décontracté** (veste en jean sur sweat) l'utilisent.
 
-Les émotions, les poses, les tenues et les accessoires sont les mêmes dans les deux cas.
+Les émotions, les poses, les tenues et les accessoires sont les mêmes dans les trois styles. Gardez un seul style par scène.
 
 ## Créer vos personnages
 

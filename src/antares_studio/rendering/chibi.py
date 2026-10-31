@@ -1148,6 +1148,10 @@ def _adult_body(params: dict[str, Any], look: Look, emo: Emotion) -> str:
 
 def chibi_svg(params: dict[str, Any], style: dict[str, Any]) -> str:
     """SVG complet d'un personnage, identique pour des paramètres identiques."""
+    if params.get("proportions") == "realiste":
+        from antares_studio.rendering.realiste import realiste_svg  # le style réaliste réutilise ce module
+
+        return realiste_svg(params, style)
     look = _look(params, style)
     emo = EMOTION_BY_ID.get(str(params.get("emotion", "neutre")), EMOTIONS[0])
     mirror = bool(params.get("mirror", False))

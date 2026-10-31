@@ -116,6 +116,7 @@ HATS: tuple[tuple[str, str], ...] = (
 PROPORTIONS: tuple[tuple[str, str], ...] = (
     ("chibi", "Chibi (grosse tête, style enfantin)"),
     ("adulte", "Adulte stylisé"),
+    ("realiste", "Réaliste (illustration)"),
 )
 GAZES: tuple[tuple[str, str], ...] = (
     ("face", "Vers le public"),
@@ -141,7 +142,7 @@ PERSONALITIES: tuple[Personality, ...] = (
         "ingenieur",
         "L'ingénieur",
         {
-            "proportions": "adulte",
+            "proportions": "realiste",
             "emotion": "explique",
             "pose": "explique",
             "outfit": "doudoune",
@@ -156,7 +157,7 @@ PERSONALITIES: tuple[Personality, ...] = (
         "ingenieur_terrain",
         "L'ingénieur sur le terrain",
         {
-            "proportions": "adulte",
+            "proportions": "realiste",
             "emotion": "neutre",
             "pose": "montre",
             "outfit": "gilet_hv",
@@ -172,7 +173,7 @@ PERSONALITIES: tuple[Personality, ...] = (
         "ingenieur_detente",
         "L'ingénieur décontracté",
         {
-            "proportions": "adulte",
+            "proportions": "realiste",
             "emotion": "joie",
             "pose": "salut",
             "outfit": "veste_jean",

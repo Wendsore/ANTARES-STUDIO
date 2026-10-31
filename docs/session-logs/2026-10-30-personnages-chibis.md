@@ -20,11 +20,13 @@
 
 « Le chibi actuel est beaucoup trop enfantin […] mon chibi, celui qui doit me représenter […] un ingénieur, quelqu'un qui fait de la techno, avec des traits africains », avec neuf photos du porteur. Réponse : réglage **Proportions → Adulte stylisé** et trois fiches *ingénieur* tirées des photos (doudoune sans manches sur sweat rouge, gilet haute visibilité et casque, veste en jean doublée) ; les chibis sont conservés. Logo de l'employeur non reproduit. ADR-0010 §12–14.
 
+Le 2026-10-31, nouveau retour : « Le chibi est trop cartoonesque, je n'aime pas. » Réponse : troisième style **Réaliste (illustration)** (module `rendering/realiste.py`, sans contour, volumes ombrés, proportions d'adulte, visage anatomique), utilisé par les trois fiches ingénieur et le modèle Dialogue ; chibi et adulte stylisé conservés. Mis au point sur planches (visages, tenues, coiffures, accessoires, mains, poses) : texture crépue qui débordait, dents et iris hors de la bouche et des yeux (`clipPath` ignoré par QtSvg), coudes pointus, mains en griffes, poings coupés en haut de l'image, corrigés. ADR-0010 §15–16.
+
 ## Preuves
 
 - Planches vérifiées à l'œil (fiches, émotions, poses, tenues, coiffures) ; défauts corrigés : poings cachés derrière la tête (victoire), tresses débordant du crâne, bande rouge de colère remplacée par un dégradé, manches courtes invalides en SVG (attribut en double, personnage vide).
-- `tests/unit/test_personnages.py` (17) et `tests/ui/test_personnages_ui.py` (2) ; suite complète : 511 passed, sortie 0 ; ruff, ruff format, mypy propres.
-- Vidéo d'essai 1080p (première passe, chibis) : dialogue, défilé des 22 émotions, six fiches ; seconde vidéo (52 s, h264 + aac, images décodées vérifiées) avec l’ingénieur adulte face au sceptique et ses trois tenues.
+- `tests/unit/test_personnages.py` (21) et `tests/ui/test_personnages_ui.py` (2) ; suite complète : 515 passed, sortie 0 ; ruff, ruff format, mypy propres.
+- Vidéo d'essai 1080p (première passe, chibis) : dialogue, défilé des 22 émotions, six fiches ; seconde vidéo (52 s, h264 + aac, images décodées vérifiées) avec l’ingénieur adulte face au sceptique et ses trois tenues ; troisième vidéo (52 s, 1080p) en style réaliste, images décodées vérifiées.
 
 ## Reste
 
